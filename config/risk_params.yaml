@@ -1,0 +1,43 @@
+
+risk_management:
+  position_sizing:
+    risk_per_trade_pct: 1.0  # percentage of portfolio to risk per trade
+    max_position_size_pct: 30.0  # max percentage of portfolio in single asset
+    min_position_size_usd: 10.0  # minimum position size in USD
+  
+  leverage:
+    default_max: 10
+    scalping_max: 5
+    momentum_max: 5
+    mean_reversion_max: 3
+  
+  stop_loss:
+    default_pct: 2.0
+    trailing_enabled: true
+    trailing_activation_pct: 1.0
+    trailing_distance_pct: 0.5
+  
+  take_profit:
+    default_risk_reward_ratio: 2.0  # 2:1 reward to risk
+    partial_profit_enabled: true
+    partial_profit_pct: 50  # close 50% at first target
+  
+  drawdown:
+    warning_threshold_pct: 5.0
+    reduce_frequency_threshold_pct: 10.0
+    halt_trading_threshold_pct: 15.0
+  
+  exposure:
+    max_single_asset_pct: 30.0
+    max_single_strategy_pct: 40.0
+    max_total_leverage_multiplier: 3.0
+  
+  daily_limits:
+    max_loss_usd: 500
+    max_loss_pct: 5.0
+    max_trades: 100
+  
+  validation:
+    min_risk_reward_ratio: 1.5
+    require_stop_loss: true
+    fat_finger_detection_multiplier: 10.0  # flag orders >10x normal size
