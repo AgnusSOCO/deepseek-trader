@@ -321,13 +321,15 @@ class VolatilitySystemStrategy(BaseStrategy):
                     exit_reason = f"Opposite breakout: LONG signal detected (change ${close_change:.2f})"
                 
                 if should_exit:
+                    exit_action = SignalAction.SELL if self.position_direction == 'long' else SignalAction.BUY
+                    
                     self.pyramid_count = 0
                     self.position_direction = None
                     
                     justification = f"{exit_reason}. Exiting position to avoid reversal."
                     
                     signal = TradingSignal(
-                        action=SignalAction.SELL if self.position_direction == 'long' else SignalAction.BUY,
+                        action=exit_action,
                         symbol=self.symbol,
                         confidence=0.85,
                         price=current_price,

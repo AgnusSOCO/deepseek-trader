@@ -41,8 +41,8 @@ class UniversalMacdStrategy(BaseStrategy):
         ema_slow_period: int = 26,
         buy_umacd_min: float = -0.01416,
         buy_umacd_max: float = -0.01176,
-        sell_umacd_min: float = -0.00707,
-        sell_umacd_max: float = -0.02323,
+        sell_umacd_min: float = -0.02323,  # Fixed: was -0.00707 (inverted)
+        sell_umacd_max: float = -0.00707,  # Fixed: was -0.02323 (inverted)
         stop_loss_pct: float = 0.318,  # 31.8% from hyperopt
         take_profit_pct: float = 0.213,  # 21.3% from hyperopt
         min_confidence: float = 0.65,
