@@ -5,7 +5,7 @@ pyyaml==6.0.1
 # Async and WebSocket
 asyncio==3.4.3
 websockets==12.0
-aiohttp==3.9.1
+aiohttp==3.12.14
 
 # Cryptocurrency Exchange Integration
 ccxt==4.2.25
