@@ -68,7 +68,7 @@ class ScalpingStrategy(BaseStrategy):
         self.bb_squeeze_threshold = config.get('bb_squeeze_threshold', 0.01)
         self.max_leverage = config.get('max_leverage', 5.0)
         self.daily_loss_limit_pct = config.get('daily_loss_limit_pct', 2.0)
-        self.min_confidence = config.get('min_confidence', 0.7)
+        self.min_confidence = config.get('min_confidence', 0.75)
         
         self.last_trade_time: Optional[datetime] = None
         self.daily_pnl = 0.0
@@ -126,14 +126,33 @@ class ScalpingStrategy(BaseStrategy):
         
         signals = self._analyze_scalping_signals(market_data, indicators)
         
-        signal_strength = sum(signals.values()) / len(signals)
+        weights = {
+            'vwap_deviation': 0.4,
+            'price_momentum': 0.3,
+            'volume_surge': 0.2,
+            'bb_breakout': 0.1,
+            'order_book_imbalance': 0.0
+        }
+        
+        signal_strength = 0.0
+        total_weight = 0.0
+        
+        for signal_name, signal_value in signals.items():
+            weight = weights.get(signal_name, 0.0)
+            signal_strength += signal_value * weight
+            total_weight += weight
+        
+        if total_weight > 0:
+            signal_strength = signal_strength / total_weight
+        else:
+            signal_strength = 0.0
         
         if signal_strength >= self.min_confidence:
             action = SignalAction.BUY
-            confidence = signal_strength
+            confidence = min(1.0, abs(signal_strength))
         elif signal_strength <= -self.min_confidence:
             action = SignalAction.SELL
-            confidence = abs(signal_strength)
+            confidence = min(1.0, abs(signal_strength))
         else:
             action = SignalAction.HOLD
             confidence = 0.5
@@ -189,7 +208,9 @@ class ScalpingStrategy(BaseStrategy):
         """
         signals = {}
         
-        signals['order_book_imbalance'] = self._check_order_book_imbalance(market_data)
+        order_book_signal = self._check_order_book_imbalance(market_data)
+        if order_book_signal != 0.0:
+            signals['order_book_imbalance'] = order_book_signal
         
         signals['volume_surge'] = self._check_volume_surge(market_data, indicators)
         
@@ -271,7 +292,7 @@ class ScalpingStrategy(BaseStrategy):
         deviation = (current_price - vwap) / vwap
         
         if abs(deviation) > self.vwap_deviation_threshold:
-            return -deviation * 10  # Scale to approximately -1 to 1
+            return max(-1.0, min(1.0, -deviation * 10))
         
         return 0.0
     
@@ -300,12 +321,12 @@ class ScalpingStrategy(BaseStrategy):
     
     def _check_price_momentum(self, indicators: Dict[str, Any]) -> float:
         """Check price momentum signal"""
-        roc = indicators.get('roc', 0)  # Rate of change
+        roc = indicators.get('roc', 0)
         
-        if roc > 0.5:
-            return min(1.0, roc / 2)
-        elif roc < -0.5:
-            return max(-1.0, roc / 2)
+        if roc > 2.0:
+            return min(1.0, roc / 10)
+        elif roc < -2.0:
+            return max(-1.0, roc / 10)
         
         return 0.0
     

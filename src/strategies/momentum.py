@@ -70,7 +70,7 @@ class MomentumStrategy(BaseStrategy):
         self.rsi_lower = config.get('rsi_lower', 40)
         self.rsi_upper = config.get('rsi_upper', 60)
         self.max_leverage = config.get('max_leverage', 5.0)
-        self.min_confidence = config.get('min_confidence', 0.65)
+        self.min_confidence = config.get('min_confidence', 0.5)
         
         self.current_position: Optional[Dict] = None
         self.highest_price_since_entry = 0.0
@@ -129,10 +129,10 @@ class MomentumStrategy(BaseStrategy):
         
         if signal_strength >= self.min_confidence:
             action = SignalAction.BUY
-            confidence = signal_strength
+            confidence = min(1.0, abs(signal_strength))
         elif signal_strength <= -self.min_confidence:
             action = SignalAction.SELL
-            confidence = abs(signal_strength)
+            confidence = min(1.0, abs(signal_strength))
         else:
             action = SignalAction.HOLD
             confidence = 0.5
@@ -230,7 +230,10 @@ class MomentumStrategy(BaseStrategy):
         minus_di = indicators.get('minus_di', 0)
         
         if adx < self.adx_weak_threshold:
-            return 0.0  # No trend
+            return 0.0
+        
+        if plus_di == 0 and minus_di == 0:
+            return 0.0
         
         if adx > self.adx_threshold:
             if plus_di > minus_di:
