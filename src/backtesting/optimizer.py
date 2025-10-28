@@ -31,7 +31,8 @@ class ParameterOptimizer:
     def __init__(
         self,
         backtest_engine: BacktestEngine,
-        optimization_metric: str = 'sharpe_ratio'
+        optimization_metric: str = 'sharpe_ratio',
+        use_composite_objective: bool = False
     ):
         """
         Initialize parameter optimizer
@@ -39,12 +40,16 @@ class ParameterOptimizer:
         Args:
             backtest_engine: BacktestEngine instance
             optimization_metric: Metric to optimize (sharpe_ratio, total_return_pct, etc.)
+            use_composite_objective: Use composite objective function (Sharpe - 0.5*DD - 0.0005*trades)
         """
         self.backtest_engine = backtest_engine
         self.optimization_metric = optimization_metric
+        self.use_composite_objective = use_composite_objective
         self.results: List[Dict[str, Any]] = []
         
         logger.info(f"ParameterOptimizer initialized with metric: {optimization_metric}")
+        if use_composite_objective:
+            logger.info("Using composite objective function: Sharpe - 0.5*DD - 0.0005*trades")
     
     def grid_search(
         self,
@@ -90,7 +95,10 @@ class ParameterOptimizer:
             try:
                 results = self.backtest_engine.run_backtest(strategy, data, symbol)
                 
-                score = results.get(self.optimization_metric, 0.0)
+                if self.use_composite_objective:
+                    score = self._calculate_composite_score(results)
+                else:
+                    score = results.get(self.optimization_metric, 0.0)
                 
                 result = {
                     'params': params,
@@ -167,7 +175,10 @@ class ParameterOptimizer:
             try:
                 results = self.backtest_engine.run_backtest(strategy, data, symbol)
                 
-                score = results.get(self.optimization_metric, 0.0)
+                if self.use_composite_objective:
+                    score = self._calculate_composite_score(results)
+                else:
+                    score = results.get(self.optimization_metric, 0.0)
                 
                 result = {
                     'params': params,
@@ -202,10 +213,11 @@ class ParameterOptimizer:
         config: Dict[str, Any],
         data: pd.DataFrame,
         n_splits: int = 5,
-        symbol: str = 'BTC/USDT'
+        symbol: str = 'BTC/USDT',
+        min_trades_per_fold: int = 30
     ) -> Dict[str, Any]:
         """
-        Perform k-fold cross-validation
+        Perform k-fold cross-validation with robustness filters
         
         Args:
             strategy_class: Strategy class to test
@@ -213,14 +225,16 @@ class ParameterOptimizer:
             data: Historical data
             n_splits: Number of folds
             symbol: Trading pair symbol
+            min_trades_per_fold: Minimum trades required per fold for robustness
         
         Returns:
-            Dict with cross-validation results
+            Dict with cross-validation results and robustness flags
         """
-        logger.info(f"Starting {n_splits}-fold cross-validation")
+        logger.info(f"Starting {n_splits}-fold cross-validation (min {min_trades_per_fold} trades/fold)")
         
         fold_size = len(data) // n_splits
         fold_results = []
+        failed_folds = []
         
         for i in range(n_splits):
             start_idx = i * fold_size
@@ -232,19 +246,28 @@ class ParameterOptimizer:
             
             try:
                 results = self.backtest_engine.run_backtest(strategy, fold_data, symbol)
-                fold_results.append(results)
                 
-                logger.debug(
-                    f"Fold {i+1}/{n_splits}: "
-                    f"{self.optimization_metric}={results.get(self.optimization_metric, 0):.4f}"
-                )
+                num_trades = results.get('num_trades', 0)
+                if num_trades < min_trades_per_fold:
+                    logger.warning(
+                        f"Fold {i+1}/{n_splits}: Only {num_trades} trades (min {min_trades_per_fold} required) - FAILED robustness check"
+                    )
+                    failed_folds.append(i + 1)
+                else:
+                    logger.debug(
+                        f"Fold {i+1}/{n_splits}: {num_trades} trades, "
+                        f"{self.optimization_metric}={results.get(self.optimization_metric, 0):.4f}"
+                    )
+                
+                fold_results.append(results)
                 
             except Exception as e:
                 logger.error(f"Error in fold {i+1}: {e}")
+                failed_folds.append(i + 1)
                 continue
         
         if not fold_results:
-            return {}
+            return {'robust': False, 'failed_folds': failed_folds}
         
         metrics = {}
         for key in fold_results[0].keys():
@@ -255,12 +278,18 @@ class ParameterOptimizer:
                 metrics[f"{key}_min"] = np.min(values)
                 metrics[f"{key}_max"] = np.max(values)
         
+        robust = len(failed_folds) == 0
+        metrics['robust'] = robust
+        metrics['failed_folds'] = failed_folds
+        metrics['passed_folds'] = n_splits - len(failed_folds)
+        
         logger.info(
             f"Cross-validation complete. "
             f"Mean {self.optimization_metric}: "
             f"{metrics.get(f'{self.optimization_metric}_mean', 0):.4f} "
             f"± {metrics.get(f'{self.optimization_metric}_std', 0):.4f}"
         )
+        logger.info(f"Robustness: {'PASS' if robust else 'FAIL'} ({metrics['passed_folds']}/{n_splits} folds passed)")
         
         return metrics
     
@@ -369,3 +398,23 @@ class ParameterOptimizer:
         df = pd.DataFrame(data)
         df = df.sort_values('param_value')
         return df
+    
+    def _calculate_composite_score(self, results: Dict[str, Any]) -> float:
+        """
+        Calculate composite objective function
+        
+        Formula: Sharpe - 0.5*DD - 0.0005*trades
+        
+        Args:
+            results: Backtest results dict
+        
+        Returns:
+            Composite score
+        """
+        sharpe = results.get('sharpe_ratio', 0.0)
+        drawdown = results.get('max_drawdown_pct', 0.0)
+        num_trades = results.get('num_trades', 0)
+        
+        composite = sharpe - 0.5 * abs(drawdown) - 0.0005 * num_trades
+        
+        return composite
