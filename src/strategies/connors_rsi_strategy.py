@@ -34,13 +34,16 @@ class ConnorsRSIStrategy(BaseStrategy):
         self,
         symbol: str,
         timeframe: str = '15m',
-        rsi_oversold: float = 10,
-        rsi_overbought: float = 90,
+        rsi_oversold: float = 5,
+        rsi_overbought: float = 95,
         rsi_exit: float = 50,
-        min_confidence: float = 0.7,
+        min_confidence: float = 0.75,
         stop_loss_pct: float = 2.0,
         take_profit_pct: float = 3.0,
-        max_trade_duration_minutes: int = 720
+        max_trade_duration_minutes: int = 720,
+        adx_max: float = 25.0,
+        min_minutes_between_trades: int = 60,
+        max_daily_trades: int = 15
     ):
         """
         Initialize Connors RSI strategy
@@ -63,6 +66,9 @@ class ConnorsRSIStrategy(BaseStrategy):
             'stop_loss_pct': stop_loss_pct,
             'take_profit_pct': take_profit_pct,
             'max_trade_duration_minutes': max_trade_duration_minutes,
+            'adx_max': adx_max,
+            'min_minutes_between_trades': min_minutes_between_trades,
+            'max_daily_trades': max_daily_trades,
         }
         super().__init__(name=f'ConnorsRSI_{timeframe}', config=config)
         
@@ -76,6 +82,7 @@ class ConnorsRSIStrategy(BaseStrategy):
         self.stop_loss_pct = stop_loss_pct
         self.take_profit_pct = take_profit_pct
         self.max_trade_duration_minutes = max_trade_duration_minutes
+        self.adx_max = adx_max
         
         self.total_trades = 0
         self.winning_trades = 0
@@ -122,12 +129,25 @@ class ConnorsRSIStrategy(BaseStrategy):
             rsi_2 = indicators.get('rsi_2', 50)
             sma_200 = indicators.get('sma_200', current_price)
             sma_5 = indicators.get('sma_5', current_price)
+            adx = indicators.get('adx', 0)
+            volume = market_data.get('volume', 0)
+            volume_avg = indicators.get('volume_avg', volume)
             
             if sma_200 == 0:
                 sma_200 = current_price
             
             above_sma_200 = current_price > sma_200
             below_sma_200 = current_price < sma_200
+            
+            can_trade, reason = self.can_trade(timestamp or datetime.now())
+            if not can_trade:
+                return self._create_hold_signal(current_price, timestamp)
+            
+            if adx > self.adx_max:
+                return self._create_hold_signal(current_price, timestamp)
+            
+            if volume < volume_avg * 0.8:
+                return self._create_hold_signal(current_price, timestamp)
             
             signal_strength = 0.0
             action = SignalAction.HOLD
