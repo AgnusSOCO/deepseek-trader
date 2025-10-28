@@ -68,7 +68,7 @@ class ScalpingStrategy(BaseStrategy):
         self.bb_squeeze_threshold = config.get('bb_squeeze_threshold', 0.01)
         self.max_leverage = config.get('max_leverage', 5.0)
         self.daily_loss_limit_pct = config.get('daily_loss_limit_pct', 2.0)
-        self.min_confidence = config.get('min_confidence', 0.85)
+        self.min_confidence = config.get('min_confidence', 0.75)
         
         self.last_trade_time: Optional[datetime] = None
         self.daily_pnl = 0.0
@@ -126,7 +126,26 @@ class ScalpingStrategy(BaseStrategy):
         
         signals = self._analyze_scalping_signals(market_data, indicators)
         
-        signal_strength = sum(signals.values()) / len(signals)
+        weights = {
+            'vwap_deviation': 0.4,
+            'price_momentum': 0.3,
+            'volume_surge': 0.2,
+            'bb_breakout': 0.1,
+            'order_book_imbalance': 0.0
+        }
+        
+        signal_strength = 0.0
+        total_weight = 0.0
+        
+        for signal_name, signal_value in signals.items():
+            weight = weights.get(signal_name, 0.0)
+            signal_strength += signal_value * weight
+            total_weight += weight
+        
+        if total_weight > 0:
+            signal_strength = signal_strength / total_weight
+        else:
+            signal_strength = 0.0
         
         if signal_strength >= self.min_confidence:
             action = SignalAction.BUY

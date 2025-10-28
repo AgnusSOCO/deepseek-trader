@@ -225,10 +225,104 @@ class DataDownloader:
         df['plus_di'] = 0.0
         df['minus_di'] = 0.0
         
-        # Drop NaN rows from indicator calculation
+        df['donchian_high_20'] = df['high'].rolling(window=20).max()
+        df['donchian_low_20'] = df['low'].rolling(window=20).min()
+        df['donchian_high_10'] = df['high'].rolling(window=10).max()
+        df['donchian_low_10'] = df['low'].rolling(window=10).min()
+        
+        df['keltner_middle'] = df['close'].ewm(span=20).mean()
+        df['keltner_upper'] = df['keltner_middle'] + (2.0 * df['atr'])
+        df['keltner_lower'] = df['keltner_middle'] - (2.0 * df['atr'])
+        
+        df = self._calculate_supertrend(df, multiplier=3.0, period=10)
+        
+        df = self._calculate_ichimoku(df)
+        
+        delta = df['close'].diff()
+        gain = delta.where(delta > 0, 0).rolling(window=2).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=2).mean()
+        rs = gain / (loss + 1e-10)
+        df['rsi_2'] = 100 - (100 / (1 + rs))
+        
+        df['sma_200'] = df['close'].rolling(window=200).mean()
+        df['sma_5'] = df['close'].rolling(window=5).mean()
+        
+        df.ffill(inplace=True)
+        df.bfill(inplace=True)
+        
         df.dropna(inplace=True)
         
         logger.info(f"Added indicators, {len(df)} rows remaining after dropna")
+        
+        return df
+    
+    def _calculate_supertrend(self, df: pd.DataFrame, multiplier: float = 3.0, period: int = 10) -> pd.DataFrame:
+        """Calculate SuperTrend indicator"""
+        hl2 = (df['high'] + df['low']) / 2
+        atr = df['atr'].bfill().ffill().fillna(1.0)
+        
+        basic_ub = hl2 + (multiplier * atr)
+        basic_lb = hl2 - (multiplier * atr)
+        
+        final_ub = basic_ub.copy()
+        final_lb = basic_lb.copy()
+        
+        for i in range(1, len(df)):
+            if pd.isna(basic_ub.iloc[i]) or pd.isna(final_ub.iloc[i-1]):
+                continue
+            if basic_ub.iloc[i] < final_ub.iloc[i-1] or df['close'].iloc[i-1] > final_ub.iloc[i-1]:
+                final_ub.iloc[i] = basic_ub.iloc[i]
+            else:
+                final_ub.iloc[i] = final_ub.iloc[i-1]
+            
+            if pd.isna(basic_lb.iloc[i]) or pd.isna(final_lb.iloc[i-1]):
+                continue
+            if basic_lb.iloc[i] > final_lb.iloc[i-1] or df['close'].iloc[i-1] < final_lb.iloc[i-1]:
+                final_lb.iloc[i] = basic_lb.iloc[i]
+            else:
+                final_lb.iloc[i] = final_lb.iloc[i-1]
+        
+        supertrend = pd.Series(index=df.index, dtype=float)
+        supertrend.iloc[0] = final_ub.iloc[0]
+        
+        for i in range(1, len(df)):
+            if pd.isna(supertrend.iloc[i-1]) or pd.isna(final_ub.iloc[i-1]):
+                supertrend.iloc[i] = final_ub.iloc[i]
+                continue
+                
+            if supertrend.iloc[i-1] == final_ub.iloc[i-1] and df['close'].iloc[i] <= final_ub.iloc[i]:
+                supertrend.iloc[i] = final_ub.iloc[i]
+            elif supertrend.iloc[i-1] == final_ub.iloc[i-1] and df['close'].iloc[i] > final_ub.iloc[i]:
+                supertrend.iloc[i] = final_lb.iloc[i]
+            elif supertrend.iloc[i-1] == final_lb.iloc[i-1] and df['close'].iloc[i] >= final_lb.iloc[i]:
+                supertrend.iloc[i] = final_lb.iloc[i]
+            elif supertrend.iloc[i-1] == final_lb.iloc[i-1] and df['close'].iloc[i] < final_lb.iloc[i]:
+                supertrend.iloc[i] = final_ub.iloc[i]
+            else:
+                supertrend.iloc[i] = supertrend.iloc[i-1]
+        
+        df['supertrend'] = supertrend
+        df['supertrend_direction'] = (df['close'] > df['supertrend']).astype(int)
+        
+        return df
+    
+    def _calculate_ichimoku(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Calculate Ichimoku Cloud indicators"""
+        period9_high = df['high'].rolling(window=9).max()
+        period9_low = df['low'].rolling(window=9).min()
+        df['tenkan_sen'] = (period9_high + period9_low) / 2
+        
+        period26_high = df['high'].rolling(window=26).max()
+        period26_low = df['low'].rolling(window=26).min()
+        df['kijun_sen'] = (period26_high + period26_low) / 2
+        
+        df['senkou_span_a'] = ((df['tenkan_sen'] + df['kijun_sen']) / 2).shift(26)
+        
+        period52_high = df['high'].rolling(window=52).max()
+        period52_low = df['low'].rolling(window=52).min()
+        df['senkou_span_b'] = ((period52_high + period52_low) / 2).shift(26)
+        
+        df['chikou_span'] = df['close'].shift(-26)
         
         return df
     
