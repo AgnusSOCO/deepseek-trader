@@ -42,3 +42,10 @@ python-multipart==0.0.6
 
 # Additional async utilities
 aiofiles==23.2.1
+
+# Phase 3: AI Integration Dependencies
+# OpenAI SDK for DeepSeek API
+openai>=1.0.0
+
+# Data validation
+pydantic>=2.0
