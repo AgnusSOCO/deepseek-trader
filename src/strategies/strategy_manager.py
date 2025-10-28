@@ -317,3 +317,178 @@ class StrategyManager:
         for strategy in self.strategies.values():
             strategy.reset()
         logger.info("Reset all strategies")
+    
+    
+    def allocate_capital(
+        self,
+        total_capital: float,
+        market_regime: str,
+        strategy_performance: Dict[str, float]
+    ) -> Dict[str, float]:
+        """
+        Allocate capital across strategies based on market regime and performance
+        
+        Args:
+            total_capital: Total capital to allocate
+            market_regime: Current market regime ('high_volatility', 'trending', 'sideways')
+            strategy_performance: Dict of strategy names to recent performance scores
+        
+        Returns:
+            Dict of strategy names to allocated capital amounts
+        """
+        regime_preferences = {
+            'high_volatility': {
+                'mean_reversion': 0.5,
+                'scalping': 0.3,
+                'momentum': 0.2
+            },
+            'trending': {
+                'momentum': 0.6,
+                'scalping': 0.2,
+                'mean_reversion': 0.2
+            },
+            'sideways': {
+                'scalping': 0.5,
+                'mean_reversion': 0.3,
+                'momentum': 0.2
+            }
+        }
+        
+        preferences = regime_preferences.get(market_regime, {})
+        
+        allocations = {}
+        total_weight = 0.0
+        
+        for strategy_name in self.strategies:
+            base_allocation = preferences.get(strategy_name, 0.25)
+            
+            performance = strategy_performance.get(strategy_name, 0.0)
+            performance_multiplier = 0.5 + min(1.0, max(0.0, performance))
+            
+            weight = base_allocation * performance_multiplier
+            allocations[strategy_name] = weight
+            total_weight += weight
+        
+        if total_weight > 0:
+            for strategy_name in allocations:
+                allocations[strategy_name] = (allocations[strategy_name] / total_weight) * total_capital
+        
+        logger.info(f"Capital allocation for {market_regime} regime: {allocations}")
+        return allocations
+    
+    def detect_market_regime(self, indicators: Dict[str, Any]) -> str:
+        """
+        Detect current market regime
+        
+        Args:
+            indicators: Technical indicators
+        
+        Returns:
+            Market regime: 'high_volatility', 'trending', or 'sideways'
+        """
+        # Get key indicators
+        atr = indicators.get('atr', 0)
+        price = indicators.get('price', 1)
+        adx = indicators.get('adx', 0)
+        bb_width = indicators.get('bb_width', 0)
+        
+        volatility_pct = (atr / price) * 100 if price > 0 else 0
+        
+        if volatility_pct > 3.0 or bb_width > 0.05:
+            regime = 'high_volatility'
+        elif adx > 25:
+            regime = 'trending'
+        else:
+            regime = 'sideways'
+        
+        logger.debug(f"Market regime detected: {regime} (volatility={volatility_pct:.2f}%, ADX={adx:.1f})")
+        return regime
+    
+    def check_combined_exposure(
+        self,
+        proposed_trades: List[Dict[str, Any]],
+        current_positions: List[Dict[str, Any]],
+        max_exposure_pct: float = 30.0
+    ) -> tuple[bool, str]:
+        """
+        Check if combined exposure from all strategies is within limits
+        
+        Args:
+            proposed_trades: List of proposed trades from strategies
+            current_positions: List of current open positions
+            max_exposure_pct: Maximum total exposure percentage
+        
+        Returns:
+            Tuple of (approved, reason)
+        """
+        current_exposure = sum(
+            abs(pos.get('size', 0) * pos.get('price', 0))
+            for pos in current_positions
+        )
+        
+        proposed_exposure = sum(
+            abs(trade.get('size', 0) * trade.get('price', 0))
+            for trade in proposed_trades
+        )
+        
+        total_exposure = current_exposure + proposed_exposure
+        
+        exposure_pct = (total_exposure / 100) * 100
+        
+        if exposure_pct > max_exposure_pct:
+            return False, f"Combined exposure {exposure_pct:.1f}% exceeds limit {max_exposure_pct:.1f}%"
+        
+        return True, f"Combined exposure {exposure_pct:.1f}% within limits"
+    
+    def select_strategies_for_regime(
+        self,
+        market_regime: str,
+        available_strategies: List[str]
+    ) -> List[str]:
+        """
+        Select optimal strategies for current market regime
+        
+        Args:
+            market_regime: Current market regime
+            available_strategies: List of available strategy names
+        
+        Returns:
+            List of strategy names to activate
+        """
+        regime_strategies = {
+            'high_volatility': ['mean_reversion', 'scalping'],
+            'trending': ['momentum', 'scalping'],
+            'sideways': ['scalping', 'mean_reversion']
+        }
+        
+        preferred = regime_strategies.get(market_regime, available_strategies)
+        
+        # Filter to only available strategies
+        selected = [s for s in preferred if s in available_strategies]
+        
+        if not selected:
+            selected = available_strategies
+        
+        logger.info(f"Selected strategies for {market_regime} regime: {selected}")
+        return selected
+    
+    def activate_strategies_for_regime(self, market_regime: str) -> None:
+        """
+        Activate optimal strategies for current market regime
+        
+        Args:
+            market_regime: Current market regime
+        """
+        # Get available strategies
+        available = list(self.strategies.keys())
+        
+        selected = self.select_strategies_for_regime(market_regime, available)
+        
+        self.stop_all()
+        
+        # Start selected strategies
+        for strategy_name in selected:
+            if strategy_name in self.strategies:
+                self.start_strategy(strategy_name)
+        
+        logger.info(f"Activated {len(selected)} strategies for {market_regime} regime")
