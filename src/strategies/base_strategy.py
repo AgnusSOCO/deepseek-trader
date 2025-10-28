@@ -83,6 +83,13 @@ class BaseStrategy(ABC):
         self.last_signal: Optional[TradingSignal] = None
         self.signal_history: List[TradingSignal] = []
         
+        self.last_trade_time: Optional[datetime] = None
+        self.daily_trade_count: int = 0
+        self.last_trade_date: Optional[datetime] = None
+        
+        self.min_minutes_between_trades = config.get('min_minutes_between_trades', 0)
+        self.max_daily_trades = config.get('max_daily_trades', 999)
+        
     @abstractmethod
     def initialize(self) -> None:
         """
@@ -144,6 +151,30 @@ class BaseStrategy(ABC):
         """
         self.config.update(params)
     
+    def can_trade(self, current_time: datetime) -> tuple[bool, str]:
+        """
+        Check if strategy can trade based on cooldown and daily limits
+        
+        Args:
+            current_time: Current timestamp
+            
+        Returns:
+            Tuple of (can_trade, reason)
+        """
+        if self.last_trade_date and current_time.date() != self.last_trade_date.date():
+            self.daily_trade_count = 0
+            self.last_trade_date = current_time
+        
+        if self.daily_trade_count >= self.max_daily_trades:
+            return False, f"Daily trade limit reached ({self.daily_trade_count}/{self.max_daily_trades})"
+        
+        if self.last_trade_time and self.min_minutes_between_trades > 0:
+            minutes_since_last = (current_time - self.last_trade_time).total_seconds() / 60
+            if minutes_since_last < self.min_minutes_between_trades:
+                return False, f"Cooldown active ({minutes_since_last:.1f}/{self.min_minutes_between_trades} min)"
+        
+        return True, "OK"
+    
     def record_signal(self, signal: TradingSignal) -> None:
         """
         Record a generated signal
@@ -153,6 +184,14 @@ class BaseStrategy(ABC):
         """
         self.last_signal = signal
         self.signal_history.append(signal)
+        
+        if signal.action in [SignalAction.BUY, SignalAction.SELL]:
+            self.last_trade_time = signal.timestamp
+            if not self.last_trade_date or signal.timestamp.date() != self.last_trade_date.date():
+                self.daily_trade_count = 1
+                self.last_trade_date = signal.timestamp
+            else:
+                self.daily_trade_count += 1
         
         if len(self.signal_history) > 1000:
             self.signal_history = self.signal_history[-1000:]
@@ -174,6 +213,9 @@ class BaseStrategy(ABC):
         self.last_signal = None
         self.signal_history = []
         self.is_initialized = False
+        self.last_trade_time = None
+        self.daily_trade_count = 0
+        self.last_trade_date = None
     
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(name='{self.name}', initialized={self.is_initialized})"
