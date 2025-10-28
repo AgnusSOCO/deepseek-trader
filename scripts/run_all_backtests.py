@@ -1,7 +1,7 @@
 """
 Run backtests for all trading strategies
 
-Tests all 8 strategies (3 existing + 5 new) across multiple timeframes
+Tests all 15 strategies (10 existing + 5 new Tier 1) across multiple timeframes
 """
 
 import sys
@@ -21,6 +21,12 @@ from src.strategies.donchian_strategy import DonchianStrategy
 from src.strategies.keltner_strategy import KeltnerStrategy
 from src.strategies.connors_rsi_strategy import ConnorsRSIStrategy
 from src.strategies.ichimoku_strategy import IchimokuStrategy
+# New Tier 1 strategies
+from src.strategies.multi_supertrend_strategy import MultiSuperTrendStrategy
+from src.strategies.adx_sma_strategy import AdxSmaStrategy
+from src.strategies.bandtastic_strategy import BandtasticStrategy
+from src.strategies.universal_macd_strategy import UniversalMacdStrategy
+from src.strategies.volatility_system_strategy import VolatilitySystemStrategy
 
 logging.basicConfig(
     level=logging.INFO,
@@ -84,6 +90,7 @@ def main():
     symbols = ['BTC/USDT', 'ETH/USDT']
     
     strategies_config = [
+        # Existing strategies
         ('Scalping_5m', lambda s: ScalpingStrategy('Scalping_5m', {'timeframe': '5m', 'min_confidence': 0.75}), '5m'),
         ('Momentum_15m', lambda s: MomentumStrategy('Momentum_15m', {'timeframe': '15m', 'min_confidence': 0.5}), '15m'),
         ('Momentum_1h', lambda s: MomentumStrategy('Momentum_1h', {'timeframe': '1h', 'min_confidence': 0.5}), '1h'),
@@ -94,6 +101,12 @@ def main():
         ('Keltner_1h', lambda s: KeltnerStrategy(s, '1h'), '1h'),
         ('ConnorsRSI_15m', lambda s: ConnorsRSIStrategy(s, '15m'), '15m'),
         ('Ichimoku_1h', lambda s: IchimokuStrategy(s, '1h'), '1h'),
+        # New Tier 1 strategies
+        ('MultiSuperTrend_1h', lambda s: MultiSuperTrendStrategy(s, '1h'), '1h'),
+        ('AdxSma_1h', lambda s: AdxSmaStrategy(s, '1h'), '1h'),
+        ('Bandtastic_15m', lambda s: BandtasticStrategy(s, '15m'), '15m'),
+        ('UniversalMacd_5m', lambda s: UniversalMacdStrategy(s, '5m'), '5m'),
+        ('VolatilitySystem_1h', lambda s: VolatilitySystemStrategy(s, '1h'), '1h'),
     ]
     
     all_results = []
