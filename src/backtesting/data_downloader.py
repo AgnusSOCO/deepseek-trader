@@ -202,6 +202,29 @@ class DataDownloader:
         df = indicators.calculate_obv(df)
         df = indicators.calculate_vwap(df)
         
+        df['sma_20'] = df['close'].rolling(window=20).mean()
+        df['sma_50'] = df['close'].rolling(window=50).mean()
+        df['std_dev'] = df['close'].rolling(window=20).std()
+        
+        df['volume_avg'] = df['volume'].rolling(window=20).mean()
+        df['volume_trend'] = df['volume'].pct_change(periods=5) * 100
+        df['price_change_pct'] = df['close'].pct_change() * 100
+        df['roc'] = df['close'].pct_change(periods=5) * 100  # Rate of change
+        
+        if 'bb_width' not in df.columns and 'bb_upper' in df.columns and 'bb_lower' in df.columns and 'bb_middle' in df.columns:
+            df['bb_width'] = ((df['bb_upper'] - df['bb_lower']) / df['bb_middle']) * 100
+        
+        if 'macd_hist' in df.columns:
+            df['macd_histogram'] = df['macd_hist']
+        
+        df['ema_12_prev'] = df['ema_12'].shift(1)
+        df['ema_26_prev'] = df['ema_26'].shift(1)
+        df['macd_histogram_prev'] = df['macd_histogram'].shift(1)
+        
+        # Note: plus_di and minus_di are not calculated by TechnicalIndicators
+        df['plus_di'] = 0.0
+        df['minus_di'] = 0.0
+        
         # Drop NaN rows from indicator calculation
         df.dropna(inplace=True)
         

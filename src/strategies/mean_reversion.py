@@ -128,10 +128,10 @@ class MeanReversionStrategy(BaseStrategy):
         
         if signal_strength >= self.min_confidence:
             action = SignalAction.BUY
-            confidence = signal_strength
+            confidence = min(1.0, abs(signal_strength))
         elif signal_strength <= -self.min_confidence:
             action = SignalAction.SELL
-            confidence = abs(signal_strength)
+            confidence = min(1.0, abs(signal_strength))
         else:
             action = SignalAction.HOLD
             confidence = 0.5
