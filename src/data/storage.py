@@ -76,7 +76,7 @@ class PerformanceMetricModel(Base):
     strategy = Column(String(50), nullable=True, index=True)
     timeframe = Column(String(10), nullable=True)
     timestamp = Column(DateTime, nullable=False, index=True)
-    metadata = Column(Text, nullable=True)  # JSON string for additional data
+    extra_metadata = Column(Text, nullable=True)  # JSON string for additional data
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -89,7 +89,7 @@ class SystemLogModel(Base):
     module = Column(String(100), nullable=False)
     message = Column(Text, nullable=False)
     timestamp = Column(DateTime, nullable=False, index=True)
-    metadata = Column(Text, nullable=True)  # JSON string for additional data
+    extra_metadata = Column(Text, nullable=True)  # JSON string for additional data
     created_at = Column(DateTime, default=datetime.utcnow)
 
 

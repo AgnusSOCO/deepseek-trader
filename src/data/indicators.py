@@ -255,7 +255,10 @@ class TechnicalIndicators:
             raise ValueError("DataFrame missing required columns")
         
         df = df.copy()
-        df['obv'] = talib.OBV(df['close'].values, df['volume'].values)
+        df['obv'] = talib.OBV(
+            df['close'].values.astype(np.float64), 
+            df['volume'].values.astype(np.float64)
+        )
         
         logger.bind(data=True).debug("Calculated OBV")
         return df
