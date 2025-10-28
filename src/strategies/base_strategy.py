@@ -54,7 +54,7 @@ class TradingSignal:
             raise ValueError(f"Confidence must be between 0.0 and 1.0, got {self.confidence}")
         if self.price <= 0:
             raise ValueError(f"Price must be positive, got {self.price}")
-        if self.position_size is not None and not 0.0 < self.position_size <= 1.0:
+        if self.position_size is not None and self.position_size > 0 and not 0.0 < self.position_size <= 1.0:
             raise ValueError(f"Position size must be between 0.0 and 1.0, got {self.position_size}")
 
 
