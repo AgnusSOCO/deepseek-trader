@@ -125,6 +125,10 @@ class UniversalMacdStrategy(BaseStrategy):
             ema_12 = indicators.get('ema_12', current_price)
             ema_26 = indicators.get('ema_26', current_price)
             
+            trend_1h = indicators.get('trend_1h', 1)
+            ema_12_1h = indicators.get('ema_12_1h', ema_12)
+            ema_26_1h = indicators.get('ema_26_1h', ema_26)
+            
             if ema_26 > 0:
                 umacd = (ema_12 / ema_26) - 1.0
             else:
@@ -141,7 +145,7 @@ class UniversalMacdStrategy(BaseStrategy):
                 return max(0.5, min(0.95, confidence))
             
             if not current_position:
-                if self.buy_umacd_min <= umacd <= self.buy_umacd_max:
+                if self.buy_umacd_min <= umacd <= self.buy_umacd_max and trend_1h == 1:
                     confidence = calculate_confidence(umacd, self.buy_umacd_min, self.buy_umacd_max)
                     
                     stop_loss = current_price * (1 - self.stop_loss_pct)
@@ -151,7 +155,8 @@ class UniversalMacdStrategy(BaseStrategy):
                         f"Universal MACD buy signal: UMACD {umacd:.5f} in optimal buy range "
                         f"[{self.buy_umacd_min:.5f}, {self.buy_umacd_max:.5f}]. "
                         f"EMA12 ${ema_12:.2f} / EMA26 ${ema_26:.2f} = {ema_12/ema_26:.5f}. "
-                        f"Normalized momentum indicates bullish setup."
+                        f"1h trend bullish (EMA12_1h ${ema_12_1h:.2f} > EMA26_1h ${ema_26_1h:.2f}). "
+                        f"Normalized momentum indicates bullish setup with HTF confirmation."
                     )
                     
                     invalidation_conditions = [
