@@ -247,6 +247,27 @@ class DataDownloader:
         df['sma_200'] = df['close'].rolling(window=200).mean()
         df['sma_5'] = df['close'].rolling(window=5).mean()
         
+        if len(df) > 12:  # Need at least 12 bars for EMA12
+            df_1h = df['close'].resample('1H').last().dropna()
+            if len(df_1h) >= 26:  # Need at least 26 bars for EMA26
+                ema_12_1h = df_1h.ewm(span=12, adjust=False).mean()
+                ema_26_1h = df_1h.ewm(span=26, adjust=False).mean()
+                
+                df['ema_12_1h'] = ema_12_1h.reindex(df.index, method='ffill')
+                df['ema_26_1h'] = ema_26_1h.reindex(df.index, method='ffill')
+                
+                df['trend_1h'] = (df['ema_12_1h'] > df['ema_26_1h']).astype(int)
+                
+                logger.info("Added HTF (1h) indicators for trend confirmation")
+            else:
+                df['ema_12_1h'] = df['ema_12']
+                df['ema_26_1h'] = df['ema_26']
+                df['trend_1h'] = (df['ema_12'] > df['ema_26']).astype(int)
+        else:
+            df['ema_12_1h'] = df['ema_12']
+            df['ema_26_1h'] = df['ema_26']
+            df['trend_1h'] = (df['ema_12'] > df['ema_26']).astype(int)
+        
         df.ffill(inplace=True)
         df.bfill(inplace=True)
         

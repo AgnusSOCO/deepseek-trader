@@ -42,13 +42,14 @@ class VolatilitySystemStrategy(BaseStrategy):
         symbol: str,
         timeframe: str = "1h",
         atr_period: int = 14,
-        atr_multiplier: float = 2.0,
-        leverage: float = 2.0,
+        atr_multiplier: float = 3.0,
+        leverage: float = 1.0,
         initial_stake_pct: float = 0.5,  # 50% on initial entry
         pyramid_stake_pct: float = 0.5,  # 50% on pyramid
-        max_pyramids: int = 1,  # Max 1 additional entry (2 total)
+        max_pyramids: int = 0,
         stop_loss_pct: float = 0.05,  # 5% stop loss
         min_confidence: float = 0.75,
+        adx_min: float = 25.0,
     ):
         self.symbol = symbol
         self.timeframe = timeframe
@@ -63,6 +64,7 @@ class VolatilitySystemStrategy(BaseStrategy):
             'max_pyramids': max_pyramids,
             'stop_loss_pct': stop_loss_pct,
             'min_confidence': min_confidence,
+            'adx_min': adx_min,
         }
         super().__init__(f"VolatilitySystem_{symbol}_{timeframe}", config)
         self.atr_period = atr_period
@@ -73,6 +75,7 @@ class VolatilitySystemStrategy(BaseStrategy):
         self.max_pyramids = max_pyramids
         self.stop_loss_pct = stop_loss_pct
         self.min_confidence = min_confidence
+        self.adx_min = adx_min
         
         self.prev_close = None
         
@@ -130,6 +133,10 @@ class VolatilitySystemStrategy(BaseStrategy):
             timestamp = market_data.get('timestamp', datetime.now())
             
             atr = indicators.get('atr', current_price * 0.02)  # Default 2% if missing
+            adx = indicators.get('adx', 0)
+            
+            if adx < self.adx_min:
+                return self._create_hold_signal(current_price, timestamp)
             
             if self.prev_close is not None:
                 close_change = current_price - self.prev_close
@@ -321,13 +328,15 @@ class VolatilitySystemStrategy(BaseStrategy):
                     exit_reason = f"Opposite breakout: LONG signal detected (change ${close_change:.2f})"
                 
                 if should_exit:
+                    exit_action = SignalAction.SELL if self.position_direction == 'long' else SignalAction.BUY
+                    
                     self.pyramid_count = 0
                     self.position_direction = None
                     
                     justification = f"{exit_reason}. Exiting position to avoid reversal."
                     
                     signal = TradingSignal(
-                        action=SignalAction.SELL if self.position_direction == 'long' else SignalAction.BUY,
+                        action=exit_action,
                         symbol=self.symbol,
                         confidence=0.85,
                         price=current_price,

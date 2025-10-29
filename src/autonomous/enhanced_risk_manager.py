@@ -126,9 +126,9 @@ class EnhancedRiskManager:
         state = self.daily_state[self.current_date]
         
         max_daily_loss = self.current_capital * (self.max_daily_loss_pct / 100.0)
-        if state.total_pnl < -max_daily_loss:
+        if state.total_pnl <= -max_daily_loss:
             logger.warning(
-                f"🛑 Daily loss limit reached: ${state.total_pnl:.2f} < ${-max_daily_loss:.2f}"
+                f"🛑 Daily loss limit reached: ${state.total_pnl:.2f} <= ${-max_daily_loss:.2f}"
             )
             return False
         
