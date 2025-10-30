@@ -48,6 +48,9 @@ class ExitPlan:
         is_short: Whether this is a short position
         created_at: When the exit plan was created
         metadata: Additional information
+        leverage: Position leverage (for leverage-adjusted P&L)
+        peak_pnl_pct: Peak P&L percentage seen (leverage-adjusted)
+        tiered_trailing_enabled: Whether to use tiered trailing stop-profit
     """
     position_id: str
     symbol: str
@@ -62,6 +65,9 @@ class ExitPlan:
     is_short: bool = False
     created_at: datetime = None
     metadata: Dict[str, Any] = None
+    leverage: float = 1.0
+    peak_pnl_pct: float = 0.0
+    tiered_trailing_enabled: bool = True
     
     def __post_init__(self):
         if self.created_at is None:
@@ -85,12 +91,18 @@ class ExitPlanMonitor:
     4. Providing exit signals when conditions are met
     """
     
-    def __init__(self):
-        """Initialize the exit plan monitor"""
+    def __init__(self, max_holding_hours: float = 36.0):
+        """
+        Initialize the exit plan monitor
+        
+        Args:
+            max_holding_hours: Maximum hours to hold a position (default: 36)
+        """
         self.exit_plans: Dict[str, ExitPlan] = {}
         self.exit_history: List[Dict[str, Any]] = []
+        self.max_holding_hours = max_holding_hours
         
-        logger.info("ExitPlanMonitor initialized")
+        logger.info(f"ExitPlanMonitor initialized: max_holding_hours={max_holding_hours}")
     
     def add_exit_plan(self, exit_plan: ExitPlan) -> None:
         """
@@ -117,6 +129,104 @@ class ExitPlanMonitor:
         if position_id in self.exit_plans:
             del self.exit_plans[position_id]
             logger.info(f"Removed exit plan for position {position_id}")
+    
+    def check_tiered_trailing_profit(
+        self,
+        position_id: str,
+        current_price: float
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Check tiered trailing stop-profit logic (nof1-style)
+        
+        Implements tiered rules:
+        - pnl >= +8%: Move stop to +3%
+        - pnl >= +15%: Move stop to +8%
+        - pnl >= +25%: Move stop to +15%
+        - Peak pullback > 30%: Immediate close
+        
+        Args:
+            position_id: Position identifier
+            current_price: Current market price
+            
+        Returns:
+            Dict with exit signal if pullback threshold exceeded, None otherwise
+        """
+        if position_id not in self.exit_plans:
+            return None
+        
+        plan = self.exit_plans[position_id]
+        
+        if not plan.tiered_trailing_enabled:
+            return None
+        
+        if not plan.is_short:
+            price_change_pct = (current_price - plan.entry_price) / plan.entry_price * 100
+        else:
+            price_change_pct = (plan.entry_price - current_price) / plan.entry_price * 100
+        
+        pnl_pct = price_change_pct * plan.leverage
+        
+        if pnl_pct > plan.peak_pnl_pct:
+            plan.peak_pnl_pct = pnl_pct
+        
+        if plan.peak_pnl_pct >= 25.0:
+            new_stop_pct = 15.0
+            if not plan.is_short:
+                new_stop_price = plan.entry_price * (1 + new_stop_pct / 100.0)
+                if new_stop_price > plan.stop_loss:
+                    old_stop = plan.stop_loss
+                    plan.stop_loss = new_stop_price
+                    logger.info(
+                        f"Tiered trailing: {plan.symbol} {position_id} peak={plan.peak_pnl_pct:.2f}% >= 25%, "
+                        f"moved stop to +15% (${old_stop:.2f} -> ${new_stop_price:.2f})"
+                    )
+            else:
+                new_stop_price = plan.entry_price * (1 - new_stop_pct / 100.0)
+                if new_stop_price < plan.stop_loss:
+                    plan.stop_loss = new_stop_price
+        elif plan.peak_pnl_pct >= 15.0:
+            new_stop_pct = 8.0
+            if not plan.is_short:
+                new_stop_price = plan.entry_price * (1 + new_stop_pct / 100.0)
+                if new_stop_price > plan.stop_loss:
+                    old_stop = plan.stop_loss
+                    plan.stop_loss = new_stop_price
+                    logger.info(
+                        f"Tiered trailing: {plan.symbol} {position_id} peak={plan.peak_pnl_pct:.2f}% >= 15%, "
+                        f"moved stop to +8% (${old_stop:.2f} -> ${new_stop_price:.2f})"
+                    )
+            else:
+                new_stop_price = plan.entry_price * (1 - new_stop_pct / 100.0)
+                if new_stop_price < plan.stop_loss:
+                    plan.stop_loss = new_stop_price
+        elif plan.peak_pnl_pct >= 8.0:
+            new_stop_pct = 3.0
+            if not plan.is_short:
+                new_stop_price = plan.entry_price * (1 + new_stop_pct / 100.0)
+                if new_stop_price > plan.stop_loss:
+                    old_stop = plan.stop_loss
+                    plan.stop_loss = new_stop_price
+                    logger.info(
+                        f"Tiered trailing: {plan.symbol} {position_id} peak={plan.peak_pnl_pct:.2f}% >= 8%, "
+                        f"moved stop to +3% (${old_stop:.2f} -> ${new_stop_price:.2f})"
+                    )
+            else:
+                new_stop_price = plan.entry_price * (1 - new_stop_pct / 100.0)
+                if new_stop_price < plan.stop_loss:
+                    plan.stop_loss = new_stop_price
+        
+        if plan.peak_pnl_pct > 0:
+            pullback_pct = ((plan.peak_pnl_pct - pnl_pct) / plan.peak_pnl_pct) * 100
+            
+            if pullback_pct > 30.0:
+                return {
+                    'should_exit': True,
+                    'reason': ExitReason.TRAILING_STOP,
+                    'price': current_price,
+                    'details': f"Peak pullback exceeded 30%: peak={plan.peak_pnl_pct:.2f}%, current={pnl_pct:.2f}%, pullback={pullback_pct:.2f}%"
+                }
+        
+        return None
     
     def update_trailing_stop(
         self,
@@ -202,6 +312,30 @@ class ExitPlanMonitor:
             return None
         
         plan = self.exit_plans[position_id]
+        
+        holding_hours = (datetime.now() - plan.created_at).total_seconds() / 3600
+        if holding_hours >= self.max_holding_hours:
+            if not plan.is_short:
+                pnl_pct = (current_price - plan.entry_price) / plan.entry_price * 100
+            else:
+                pnl_pct = (plan.entry_price - current_price) / plan.entry_price * 100
+            
+            return {
+                'should_exit': True,
+                'reason': ExitReason.TIMEOUT,
+                'price': current_price,
+                'details': f"Max holding time exceeded: {holding_hours:.1f}h >= {self.max_holding_hours}h, P&L: {pnl_pct:.2f}%"
+            }
+        
+        if holding_hours >= (self.max_holding_hours - 2):
+            logger.warning(
+                f"⚠️  Position {position_id} approaching max holding time: "
+                f"{holding_hours:.1f}h / {self.max_holding_hours}h"
+            )
+        
+        tiered_exit = self.check_tiered_trailing_profit(position_id, current_price)
+        if tiered_exit:
+            return tiered_exit
         
         self.update_trailing_stop(position_id, current_price)
         

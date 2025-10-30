@@ -30,6 +30,7 @@ from src.autonomous.performance_monitor import PerformanceMonitor
 from src.autonomous.error_recovery import ErrorRecoveryManager
 from src.autonomous.logging_config import setup_comprehensive_logging
 from src.strategies.base_strategy import BaseStrategy
+from src.data.price_feed import PriceFeed
 
 logger = logging.getLogger(__name__)
 
@@ -49,8 +50,9 @@ class AutonomousTradingSystem:
     def __init__(
         self,
         strategies: List[BaseStrategy],
+        price_feed: PriceFeed,
         initial_capital: float = 10000.0,
-        loop_interval_seconds: int = 180,
+        loop_interval_seconds: int = 300,
         max_open_positions: int = 5,
         min_confidence_threshold: float = 0.7,
         enable_trading: bool = False,
@@ -66,6 +68,7 @@ class AutonomousTradingSystem:
         
         Args:
             strategies: List of trading strategies
+            price_feed: Real-time price feed service
             initial_capital: Starting capital
             loop_interval_seconds: Time between decision loops
             max_open_positions: Maximum concurrent positions
@@ -79,6 +82,7 @@ class AutonomousTradingSystem:
             error_cooldown_seconds: Cooldown period after errors
         """
         self.strategies = strategies
+        self.price_feed = price_feed
         self.initial_capital = initial_capital
         self.loop_interval_seconds = loop_interval_seconds
         self.max_open_positions = max_open_positions
@@ -100,6 +104,7 @@ class AutonomousTradingSystem:
             strategies=strategies,
             exit_monitor=self.exit_monitor,
             risk_manager=self.risk_manager,
+            price_feed=price_feed,
             loop_interval_seconds=loop_interval_seconds,
             max_open_positions=max_open_positions,
             min_confidence_threshold=min_confidence_threshold,
@@ -131,6 +136,7 @@ class AutonomousTradingSystem:
         logger.info(f"Trading Enabled: {enable_trading}")
         logger.info(f"Dashboard Enabled: {enable_dashboard}")
         logger.info(f"Log Directory: {self.log_dir}")
+        logger.info(f"Price Feed: {price_feed.exchange_id} ({len(price_feed.symbols)} symbols, {len(price_feed.timeframes)} timeframes)")
         logger.info("=" * 80)
     
     def _setup_signal_handlers(self) -> None:
@@ -162,6 +168,10 @@ class AutonomousTradingSystem:
             logger.warning("⚠️  TRADING DISABLED - Running in simulation mode")
         
         try:
+            logger.info("🔌 Starting PriceFeed service...")
+            await self.price_feed.start()
+            logger.info("✅ PriceFeed service started")
+            
             tasks = []
             
             tasks.append(asyncio.create_task(self._run_decision_engine()))
@@ -341,6 +351,10 @@ class AutonomousTradingSystem:
         try:
             self.decision_engine.stop()
             
+            logger.info("🔌 Stopping PriceFeed service...")
+            await self.price_feed.stop()
+            logger.info("✅ PriceFeed service stopped")
+            
             await self._save_final_state()
             
             self.performance_monitor.save_metrics()
@@ -423,7 +437,7 @@ async def main():
     system = AutonomousTradingSystem(
         strategies=strategies,
         initial_capital=10000.0,
-        loop_interval_seconds=180,
+        loop_interval_seconds=300,
         max_open_positions=5,
         min_confidence_threshold=0.7,
         enable_trading=False,
