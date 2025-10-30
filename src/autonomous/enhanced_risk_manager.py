@@ -56,6 +56,8 @@ class EnhancedRiskManager:
         max_symbol_exposure_pct: float = 20.0,  # Max 20% exposure per symbol
         confidence_scaling: bool = True,  # Scale position size by confidence
         min_confidence_for_full_size: float = 0.9,  # Confidence needed for max size
+        account_drawdown_warn_pct: float = 15.0,  # 15% drawdown warning threshold
+        account_drawdown_stop_pct: float = 20.0,  # 20% drawdown stop threshold
     ):
         """
         Initialize enhanced risk manager
@@ -69,6 +71,8 @@ class EnhancedRiskManager:
             max_symbol_exposure_pct: Maximum exposure per symbol as % of capital
             confidence_scaling: Whether to scale position size by confidence
             min_confidence_for_full_size: Confidence needed for maximum position size
+            account_drawdown_warn_pct: Account drawdown warning threshold (15%)
+            account_drawdown_stop_pct: Account drawdown stop threshold (20%)
         """
         self.initial_capital = initial_capital
         self.current_capital = initial_capital
@@ -79,6 +83,8 @@ class EnhancedRiskManager:
         self.max_symbol_exposure_pct = max_symbol_exposure_pct
         self.confidence_scaling = confidence_scaling
         self.min_confidence_for_full_size = min_confidence_for_full_size
+        self.account_drawdown_warn_pct = account_drawdown_warn_pct
+        self.account_drawdown_stop_pct = account_drawdown_stop_pct
         
         self.daily_state: Dict[date, DailyRiskState] = {}
         self.current_date = date.today()
@@ -91,12 +97,16 @@ class EnhancedRiskManager:
         self.max_drawdown = 0.0
         self.peak_capital = initial_capital
         
+        self.no_new_positions = False  # Set to True at 15% drawdown
+        self.trading_paused = False  # Set to True at 20% drawdown
+        
         logger.info(
             f"EnhancedRiskManager initialized: "
             f"capital=${initial_capital:.2f}, "
             f"max daily loss={max_daily_loss_pct}%, "
             f"max daily trades={max_daily_trades}, "
-            f"position size={min_position_size_pct}-{max_position_size_pct}%"
+            f"position size={min_position_size_pct}-{max_position_size_pct}%, "
+            f"drawdown thresholds={account_drawdown_warn_pct}%/{account_drawdown_stop_pct}%"
         )
     
     def _init_daily_state(self) -> None:
@@ -115,14 +125,64 @@ class EnhancedRiskManager:
             self.current_date = today
             self._init_daily_state()
     
+    def get_account_drawdown(self) -> float:
+        """
+        Calculate current account drawdown from peak
+        
+        Returns:
+            Drawdown percentage from peak capital
+        """
+        if self.peak_capital <= 0:
+            return 0.0
+        
+        drawdown = (self.peak_capital - self.current_capital) / self.peak_capital * 100
+        return drawdown
+    
+    def check_drawdown_protection(self) -> None:
+        """
+        Check account drawdown and update protection flags
+        
+        Sets no_new_positions flag at 15% drawdown
+        Sets trading_paused flag at 20% drawdown
+        """
+        drawdown = self.get_account_drawdown()
+        
+        if drawdown >= self.account_drawdown_stop_pct:
+            if not self.trading_paused:
+                self.trading_paused = True
+                self.no_new_positions = True
+                logger.critical(
+                    f"🛑 TRADING PAUSED: Account drawdown {drawdown:.2f}% >= {self.account_drawdown_stop_pct}% threshold. "
+                    f"Peak=${self.peak_capital:.2f}, Current=${self.current_capital:.2f}"
+                )
+        elif drawdown >= self.account_drawdown_warn_pct:
+            if not self.no_new_positions:
+                self.no_new_positions = True
+                logger.warning(
+                    f"⚠️  NO NEW POSITIONS: Account drawdown {drawdown:.2f}% >= {self.account_drawdown_warn_pct}% threshold. "
+                    f"Peak=${self.peak_capital:.2f}, Current=${self.current_capital:.2f}"
+                )
+        else:
+            if self.no_new_positions or self.trading_paused:
+                self.no_new_positions = False
+                self.trading_paused = False
+                logger.info(
+                    f"✅ Drawdown protection cleared: {drawdown:.2f}% < {self.account_drawdown_warn_pct}%"
+                )
+    
     def can_trade_today(self) -> bool:
         """
         Check if trading is allowed today
         
         Returns:
-            True if can trade, False if daily limits reached
+            True if can trade, False if daily limits reached or trading paused
         """
         self._check_new_day()
+        self.check_drawdown_protection()
+        
+        if self.trading_paused:
+            return False
+        
         state = self.daily_state[self.current_date]
         
         max_daily_loss = self.current_capital * (self.max_daily_loss_pct / 100.0)
@@ -151,6 +211,13 @@ class EnhancedRiskManager:
             True if can open position, False otherwise
         """
         if not self.can_trade_today():
+            return False
+        
+        if self.no_new_positions:
+            logger.warning(
+                f"⚠️  Cannot open new position: no_new_positions flag set "
+                f"(drawdown protection active)"
+            )
             return False
         
         current_exposure = self.symbol_exposure.get(symbol, 0.0)
@@ -306,6 +373,8 @@ class EnhancedRiskManager:
         
         current_drawdown = (self.peak_capital - self.current_capital) / self.peak_capital * 100
         self.max_drawdown = max(self.max_drawdown, current_drawdown)
+        
+        self.check_drawdown_protection()
         
         logger.info(
             f"💰 Trade result recorded: "
