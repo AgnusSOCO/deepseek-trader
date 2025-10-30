@@ -334,15 +334,225 @@ class BybitExchange(ExchangeInterface):
         pass
 
 
+class MexcExchange(ExchangeInterface):
+    """
+    MEXC exchange implementation
+    
+    Supports both demo and live trading.
+    MEXC is popular for low fees and wide altcoin selection.
+    """
+    
+    def __init__(self, api_key: str, api_secret: str, testnet: bool = True):
+        """
+        Initialize MEXC exchange interface
+        
+        Args:
+            api_key: API key
+            api_secret: API secret
+            testnet: Use demo mode if True, live if False
+        """
+        self.api_key = api_key
+        self.api_secret = api_secret
+        self.testnet = testnet
+        
+        self.exchange = ccxt.mexc({
+            'apiKey': api_key,
+            'secret': api_secret,
+            'options': {
+                'defaultType': 'spot',  # MEXC primarily uses spot trading
+                'adjustForTimeDifference': True
+            }
+        })
+        
+        if testnet:
+            logger.info("MEXC initialized in DEMO mode - use small amounts for testing")
+        
+        logger.info(f"Initialized MEXC exchange (demo={testnet})")
+    
+    async def submit_order(self,
+                          symbol: str,
+                          side: str,
+                          order_type: str,
+                          quantity: float,
+                          price: Optional[float] = None,
+                          stop_price: Optional[float] = None,
+                          client_order_id: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Submit an order to MEXC
+        
+        Args:
+            symbol: Trading pair symbol (e.g., 'BTC/USDT')
+            side: Order side ('BUY' or 'SELL')
+            order_type: Order type ('MARKET', 'LIMIT', etc.)
+            quantity: Order quantity
+            price: Limit price (for limit orders)
+            stop_price: Stop price (for stop orders)
+            client_order_id: Client order ID
+            
+        Returns:
+            Order response from exchange
+        """
+        try:
+            params = {}
+            if client_order_id:
+                params['newClientOrderId'] = client_order_id
+            
+            if order_type == 'MARKET':
+                order = await self.exchange.create_market_order(
+                    symbol=symbol,
+                    side=side.lower(),
+                    amount=quantity,
+                    params=params
+                )
+            elif order_type == 'LIMIT':
+                if price is None:
+                    raise ValueError("Price required for limit orders")
+                order = await self.exchange.create_limit_order(
+                    symbol=symbol,
+                    side=side.lower(),
+                    amount=quantity,
+                    price=price,
+                    params=params
+                )
+            elif order_type == 'STOP_LOSS':
+                if stop_price is None:
+                    raise ValueError("Stop price required for stop loss orders")
+                params['stopPrice'] = stop_price
+                order = await self.exchange.create_order(
+                    symbol=symbol,
+                    type='STOP_LOSS',
+                    side=side.lower(),
+                    amount=quantity,
+                    params=params
+                )
+            else:
+                raise ValueError(f"Unsupported order type: {order_type}")
+            
+            logger.info(f"MEXC order submitted: {order.get('id')} - {side} {quantity} {symbol}")
+            return {
+                'order_id': order.get('id'),
+                'status': order.get('status'),
+                'symbol': symbol,
+                'side': side,
+                'type': order_type,
+                'quantity': quantity,
+                'price': price,
+                'timestamp': order.get('timestamp')
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to submit MEXC order: {e}")
+            raise
+    
+    async def cancel_order(self, symbol: str, order_id: str) -> Dict[str, Any]:
+        """
+        Cancel an order on MEXC
+        
+        Args:
+            symbol: Trading pair symbol
+            order_id: Order ID to cancel
+            
+        Returns:
+            Cancellation response
+        """
+        try:
+            result = await self.exchange.cancel_order(order_id, symbol)
+            logger.info(f"MEXC order canceled: {order_id}")
+            return result
+        except Exception as e:
+            logger.error(f"Failed to cancel MEXC order {order_id}: {e}")
+            raise
+    
+    async def get_order_status(self, symbol: str, order_id: str) -> Dict[str, Any]:
+        """
+        Get order status from MEXC
+        
+        Args:
+            symbol: Trading pair symbol
+            order_id: Order ID
+            
+        Returns:
+            Order status information
+        """
+        try:
+            order = await self.exchange.fetch_order(order_id, symbol)
+            return {
+                'order_id': order.get('id'),
+                'status': order.get('status'),
+                'symbol': order.get('symbol'),
+                'side': order.get('side'),
+                'type': order.get('type'),
+                'price': order.get('price'),
+                'amount': order.get('amount'),
+                'filled': order.get('filled'),
+                'remaining': order.get('remaining'),
+                'executedQty': order.get('filled'),
+                'avgPrice': order.get('average'),
+                'timestamp': order.get('timestamp')
+            }
+        except Exception as e:
+            logger.error(f"Failed to get MEXC order status {order_id}: {e}")
+            raise
+    
+    async def get_balance(self) -> Dict[str, Any]:
+        """
+        Get account balance from MEXC
+        
+        Returns:
+            Account balance information
+        """
+        try:
+            balance = await self.exchange.fetch_balance()
+            return {
+                'total': balance.get('total', {}),
+                'free': balance.get('free', {}),
+                'used': balance.get('used', {}),
+                'timestamp': balance.get('timestamp')
+            }
+        except Exception as e:
+            logger.error(f"Failed to get MEXC balance: {e}")
+            raise
+    
+    async def get_positions(self) -> List[Dict[str, Any]]:
+        """
+        Get open positions from MEXC
+        
+        Note: MEXC spot trading doesn't have traditional positions
+        This returns open orders instead
+        
+        Returns:
+            List of open orders (MEXC spot equivalent of positions)
+        """
+        try:
+            open_orders = await self.exchange.fetch_open_orders()
+            return [
+                {
+                    'symbol': order.get('symbol'),
+                    'side': order.get('side'),
+                    'amount': order.get('amount'),
+                    'filled': order.get('filled'),
+                    'remaining': order.get('remaining'),
+                    'price': order.get('price'),
+                    'type': order.get('type'),
+                    'status': order.get('status'),
+                    'timestamp': order.get('timestamp')
+                }
+                for order in open_orders
+            ]
+        except Exception as e:
+            logger.error(f"Failed to get MEXC positions: {e}")
+            raise
+
+
 def create_exchange(exchange_name: str, api_key: str, api_secret: str, testnet: bool = True) -> ExchangeInterface:
     """
     Factory function to create exchange interface
     
     Args:
-        exchange_name: Name of exchange ('binance', 'bybit', etc.)
+        exchange_name: Name of exchange ('binance', 'bybit', 'mexc', etc.)
         api_key: API key
         api_secret: API secret
-        testnet: Use testnet if True, live if False
+        testnet: Use testnet/demo if True, live if False
         
     Returns:
         Exchange interface instance
@@ -353,5 +563,7 @@ def create_exchange(exchange_name: str, api_key: str, api_secret: str, testnet: 
         return BinanceExchange(api_key, api_secret, testnet)
     elif exchange_name == 'bybit':
         return BybitExchange(api_key, api_secret, testnet)
+    elif exchange_name == 'mexc':
+        return MexcExchange(api_key, api_secret, testnet)
     else:
-        raise ValueError(f"Unsupported exchange: {exchange_name}")
+        raise ValueError(f"Unsupported exchange: {exchange_name}. Supported: binance, bybit, mexc")
