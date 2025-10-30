@@ -24,6 +24,7 @@ import uuid
 from src.autonomous.exit_plan_monitor import ExitPlanMonitor, ExitPlan, ExitReason
 from src.autonomous.enhanced_risk_manager import EnhancedRiskManager
 from src.strategies.base_strategy import BaseStrategy, TradingSignal, SignalAction
+from src.data.price_feed import PriceFeed
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +70,7 @@ class AutonomousDecisionEngine:
         strategies: List[BaseStrategy],
         exit_monitor: ExitPlanMonitor,
         risk_manager: EnhancedRiskManager,
+        price_feed: PriceFeed,
         loop_interval_seconds: int = 180,  # 3 minutes
         max_open_positions: int = 5,
         min_confidence_threshold: float = 0.7,
@@ -81,6 +83,7 @@ class AutonomousDecisionEngine:
             strategies: List of trading strategies to use
             exit_monitor: Exit plan monitor instance
             risk_manager: Enhanced risk manager instance
+            price_feed: Real-time price feed service
             loop_interval_seconds: Time between decision loops (default 180s = 3min)
             max_open_positions: Maximum number of concurrent positions
             min_confidence_threshold: Minimum confidence to enter trades
@@ -89,6 +92,7 @@ class AutonomousDecisionEngine:
         self.strategies = strategies
         self.exit_monitor = exit_monitor
         self.risk_manager = risk_manager
+        self.price_feed = price_feed
         self.loop_interval_seconds = loop_interval_seconds
         self.max_open_positions = max_open_positions
         self.min_confidence_threshold = min_confidence_threshold
@@ -206,9 +210,17 @@ class AutonomousDecisionEngine:
         positions_to_close = []
         
         for position_id, position in self.open_positions.items():
-            current_price = self._get_current_price(position.symbol)
-            market_data = {'price': current_price, 'timestamp': datetime.now()}
-            indicators = {}  # Would fetch real indicators in production
+            current_price = self.price_feed.get_latest_price(position.symbol)
+            
+            timeframe = position.metadata.get('timeframe', '1h')
+            indicators = self.price_feed.get_indicators(position.symbol, timeframe)
+            
+            market_data = {
+                'symbol': position.symbol,
+                'price': current_price,
+                'timestamp': datetime.now(),
+                'timeframe': timeframe
+            }
             
             exit_signal = self.exit_monitor.check_exit_conditions(
                 position_id,
@@ -295,15 +307,28 @@ class AutonomousDecisionEngine:
         for strategy in self.strategies:
             try:
                 symbol = getattr(strategy, 'symbol', 'BTC/USDT')
-                current_price = self._get_current_price(symbol)
+                timeframe = getattr(strategy, 'timeframe', '1h')
+                
+                current_price = self.price_feed.get_latest_price(symbol)
+                
+                if current_price == 0:
+                    logger.warning(f"No price data for {symbol}, skipping {strategy.name}")
+                    continue
+                
+                indicators = self.price_feed.get_indicators(symbol, timeframe)
+                latest_candle = self.price_feed.get_latest_candle(symbol, timeframe)
                 
                 market_data = {
+                    'symbol': symbol,
                     'price': current_price,
                     'timestamp': datetime.now(),
-                    'volume': 1000.0  # Simulated
+                    'timeframe': timeframe,
+                    'volume': latest_candle['volume'] if latest_candle else 0.0,
+                    'open': latest_candle['open'] if latest_candle else current_price,
+                    'high': latest_candle['high'] if latest_candle else current_price,
+                    'low': latest_candle['low'] if latest_candle else current_price,
+                    'close': latest_candle['close'] if latest_candle else current_price
                 }
-                
-                indicators = {}  # Would fetch real indicators in production
                 
                 has_position = any(
                     p.symbol == symbol for p in self.open_positions.values()
@@ -323,7 +348,7 @@ class AutonomousDecisionEngine:
                     signals.append(signal)
                     logger.info(
                         f"  ✓ {strategy.name}: {signal.action.value} "
-                        f"confidence={signal.confidence:.2f}"
+                        f"confidence={signal.confidence:.2f} @ ${current_price:.2f}"
                     )
             
             except Exception as e:
@@ -523,22 +548,6 @@ class AutonomousDecisionEngine:
         
         logger.info(f"{'='*80}\n")
     
-    def _get_current_price(self, symbol: str) -> float:
-        """
-        Get current price for a symbol (simulated for now)
-        
-        Args:
-            symbol: Trading pair symbol
-            
-        Returns:
-            Current price
-        """
-        base_prices = {
-            'BTC/USDT': 50000.0,
-            'ETH/USDT': 3000.0,
-        }
-        
-        return base_prices.get(symbol, 1000.0)
     
     def get_statistics(self) -> Dict[str, Any]:
         """Get engine statistics"""
