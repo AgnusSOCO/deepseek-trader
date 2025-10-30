@@ -13,7 +13,7 @@ This is critical for zero human interaction to prevent catastrophic losses.
 """
 
 import logging
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass, field
 
@@ -91,6 +91,7 @@ class EnhancedRiskManager:
         self._init_daily_state()
         
         self.symbol_exposure: Dict[str, float] = {}
+        self.last_trade_time: Dict[str, datetime] = {}
         
         self.total_trades = 0
         self.total_pnl = 0.0
@@ -200,6 +201,31 @@ class EnhancedRiskManager:
         
         return True
     
+    def can_trade_symbol(self, symbol: str) -> bool:
+        """
+        Check if we can trade this symbol (cooldown check)
+        
+        Args:
+            symbol: Trading pair symbol
+            
+        Returns:
+            True if enough time has passed since last trade, False otherwise
+        """
+        if symbol not in self.last_trade_time:
+            return True
+        
+        elapsed = (datetime.now() - self.last_trade_time[symbol]).total_seconds()
+        
+        if elapsed < self.min_trade_interval_sec:
+            remaining = self.min_trade_interval_sec - elapsed
+            logger.debug(
+                f"⏰ Symbol cooldown active for {symbol}: "
+                f"{remaining:.0f}s remaining (min interval: {self.min_trade_interval_sec}s)"
+            )
+            return False
+        
+        return True
+    
     def can_open_position(self, symbol: str) -> bool:
         """
         Check if we can open a position in this symbol
@@ -304,6 +330,7 @@ class EnhancedRiskManager:
         state = self.daily_state[self.current_date]
         
         self.symbol_exposure[symbol] = self.symbol_exposure.get(symbol, 0.0) + position_value
+        self.last_trade_time[symbol] = datetime.now()
         
         state.open_positions += 1
         if symbol not in state.symbols_traded:
@@ -312,7 +339,8 @@ class EnhancedRiskManager:
         logger.info(
             f"📈 Position opened: {symbol}, "
             f"value=${position_value:.2f}, "
-            f"exposure=${self.symbol_exposure[symbol]:.2f}"
+            f"exposure=${self.symbol_exposure[symbol]:.2f}, "
+            f"cooldown={self.min_trade_interval_sec}s"
         )
     
     def record_position_closed(
