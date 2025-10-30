@@ -40,16 +40,16 @@ class VolatilitySystemStrategy(BaseStrategy):
     def __init__(
         self,
         symbol: str,
-        timeframe: str = "1h",
+        timeframe: str = "15m",  # FIXED: Switch to 15m (was 1h)
         atr_period: int = 14,
-        atr_multiplier: float = 3.0,
-        leverage: float = 1.0,
+        atr_multiplier: float = 2.0,  # FIXED: Lower threshold (was 3.0)
+        leverage: float = 1.0,  # FIXED: Keep at 1.0 (no leverage)
         initial_stake_pct: float = 0.5,  # 50% on initial entry
         pyramid_stake_pct: float = 0.5,  # 50% on pyramid
-        max_pyramids: int = 0,
-        stop_loss_pct: float = 0.05,  # 5% stop loss
-        min_confidence: float = 0.75,
-        adx_min: float = 25.0,
+        max_pyramids: int = 0,  # FIXED: Disable pyramiding (was 0)
+        stop_loss_pct: float = 0.03,  # FIXED: Tighter stop (was 0.05)
+        min_confidence: float = 0.80,  # FIXED: Higher threshold (was 0.75)
+        adx_min: float = 20.0,  # FIXED: Lower to allow more trades (was 25.0)
     ):
         self.symbol = symbol
         self.timeframe = timeframe

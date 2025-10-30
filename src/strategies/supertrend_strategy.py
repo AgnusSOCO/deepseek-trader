@@ -33,10 +33,10 @@ class SuperTrendStrategy(BaseStrategy):
         symbol: str,
         timeframe: str = '1h',
         atr_period: int = 10,
-        atr_multiplier: float = 3.0,
-        min_confidence: float = 0.7,
-        stop_loss_atr_multiplier: float = 2.0,
-        take_profit_atr_multiplier: float = 4.0,
+        atr_multiplier: float = 2.5,
+        min_confidence: float = 0.65,
+        stop_loss_atr_multiplier: float = 1.5,
+        take_profit_atr_multiplier: float = 3.5,
         max_trade_duration_minutes: int = 1440
     ):
         """

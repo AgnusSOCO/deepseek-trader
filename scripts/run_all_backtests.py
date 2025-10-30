@@ -1,7 +1,10 @@
 """
 Run backtests for all trading strategies
 
-Tests all 15 strategies (10 existing + 5 new Tier 1) across multiple timeframes
+Tests all 19 strategies:
+- 10 existing strategies (with fixes)
+- 5 Tier 1 strategies from Phase A
+- 5 new strategies from Phase G improvements
 """
 
 import sys
@@ -27,6 +30,11 @@ from src.strategies.adx_sma_strategy import AdxSmaStrategy
 from src.strategies.bandtastic_strategy import BandtasticStrategy
 from src.strategies.universal_macd_strategy import UniversalMacdStrategy
 from src.strategies.volatility_system_strategy import VolatilitySystemStrategy
+from src.strategies.ema_obv_strategy import EmaObvStrategy
+from src.strategies.hlhb_strategy import HlhbStrategy
+from src.strategies.stochastic_rsi_strategy import StochasticRsiStrategy
+from src.strategies.bb_squeeze_strategy import BbSqueezeStrategy
+from src.strategies.atr_channel_strategy import AtrChannelStrategy
 
 logging.basicConfig(
     level=logging.INFO,
@@ -92,7 +100,7 @@ def main():
     strategies_config = [
         # Existing strategies
         ('Scalping_5m', lambda s: ScalpingStrategy('Scalping_5m', {'timeframe': '5m', 'min_confidence': 0.75}), '5m'),
-        ('Momentum_15m', lambda s: MomentumStrategy('Momentum_15m', {'timeframe': '15m', 'min_confidence': 0.5}), '15m'),
+        # ('Momentum_15m', lambda s: MomentumStrategy('Momentum_15m', {'timeframe': '15m', 'min_confidence': 0.5}), '15m'),
         ('Momentum_1h', lambda s: MomentumStrategy('Momentum_1h', {'timeframe': '1h', 'min_confidence': 0.5}), '1h'),
         ('MeanReversion_5m', lambda s: MeanReversionStrategy('MeanReversion_5m', {'timeframe': '5m'}), '5m'),
         ('MeanReversion_15m', lambda s: MeanReversionStrategy('MeanReversion_15m', {'timeframe': '15m'}), '15m'),
@@ -106,7 +114,12 @@ def main():
         ('AdxSma_1h', lambda s: AdxSmaStrategy(s, '1h'), '1h'),
         ('Bandtastic_15m', lambda s: BandtasticStrategy(s, '15m'), '15m'),
         ('UniversalMacd_5m', lambda s: UniversalMacdStrategy(s, '5m'), '5m'),
-        ('VolatilitySystem_1h', lambda s: VolatilitySystemStrategy(s, '1h'), '1h'),
+        ('VolatilitySystem_15m', lambda s: VolatilitySystemStrategy(s, '15m'), '15m'),
+        ('EmaObv_15m', lambda s: EmaObvStrategy(s, '15m'), '15m'),
+        ('Hlhb_1h', lambda s: HlhbStrategy(s, '1h'), '1h'),
+        ('StochRsi_15m', lambda s: StochasticRsiStrategy(s, '15m'), '15m'),
+        ('BbSqueeze_15m', lambda s: BbSqueezeStrategy(s, '15m'), '15m'),
+        ('AtrChannel_1h', lambda s: AtrChannelStrategy(s, '1h'), '1h'),
     ]
     
     all_results = []
