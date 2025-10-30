@@ -170,16 +170,16 @@ class MultiSuperTrendStrategy(BaseStrategy):
             buy_count = sum(buy_signals)
             sell_count = sum(sell_signals)
             
-            if buy_count == 3 and not current_position:
-                confidence = 0.9  # High confidence when all 3 agree
+            if buy_count >= 2 and not current_position:
+                confidence = 0.9 if buy_count == 3 else 0.75  # Higher confidence when all 3 agree
                 
                 stop_loss = current_price * (1 - self.stop_loss_pct)
                 take_profit = current_price * (1 + self.take_profit_pct)
                 
                 justification = (
-                    f"All 3 buy SuperTrend indicators show uptrend. "
+                    f"{buy_count}/3 buy SuperTrend indicators show uptrend. "
                     f"Price ${current_price:.2f} > SuperTrend ${supertrend:.2f}. "
-                    f"Strong bullish confirmation."
+                    f"{'Strong' if buy_count == 3 else 'Good'} bullish confirmation."
                 )
                 
                 invalidation_conditions = [
@@ -209,13 +209,13 @@ class MultiSuperTrendStrategy(BaseStrategy):
                 self.record_signal(signal)
                 return signal
             
-            elif sell_count == 3 and current_position:
-                confidence = 0.9  # High confidence when all 3 agree
+            elif sell_count >= 2 and current_position:
+                confidence = 0.9 if sell_count == 3 else 0.75  # Higher confidence when all 3 agree
                 
                 justification = (
-                    f"All 3 sell SuperTrend indicators show downtrend. "
+                    f"{sell_count}/3 sell SuperTrend indicators show downtrend. "
                     f"Price ${current_price:.2f} < SuperTrend ${supertrend:.2f}. "
-                    f"Strong bearish confirmation - exit position."
+                    f"{'Strong' if sell_count == 3 else 'Good'} bearish confirmation - exit position."
                 )
                 
                 signal = TradingSignal(

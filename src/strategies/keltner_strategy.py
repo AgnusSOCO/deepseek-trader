@@ -34,10 +34,10 @@ class KeltnerStrategy(BaseStrategy):
         timeframe: str = '1h',
         ema_period: int = 20,
         atr_period: int = 10,
-        atr_multiplier: float = 2.0,
-        min_confidence: float = 0.7,
-        stop_loss_atr_multiplier: float = 1.5,
-        take_profit_atr_multiplier: float = 3.0,
+        atr_multiplier: float = 1.8,
+        min_confidence: float = 0.65,
+        stop_loss_atr_multiplier: float = 1.3,
+        take_profit_atr_multiplier: float = 2.8,
         max_trade_duration_minutes: int = 1440
     ):
         """
@@ -132,15 +132,9 @@ class KeltnerStrategy(BaseStrategy):
             if channel_width == 0:
                 return self._create_hold_signal(current_price, timestamp)
             
-            breakout_up = (
-                current_price > keltner_upper and
-                (self.last_upper is None or current_price > self.last_upper)
-            )
+            breakout_up = current_price > keltner_upper
             
-            breakout_down = (
-                current_price < keltner_lower and
-                (self.last_lower is None or current_price < self.last_lower)
-            )
+            breakout_down = current_price < keltner_lower
             
             self.last_upper = keltner_upper
             self.last_lower = keltner_lower

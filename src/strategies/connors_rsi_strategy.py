@@ -34,16 +34,16 @@ class ConnorsRSIStrategy(BaseStrategy):
         self,
         symbol: str,
         timeframe: str = '15m',
-        rsi_oversold: float = 5,
-        rsi_overbought: float = 95,
+        rsi_oversold: float = 3,  # FIXED: More extreme (was 5)
+        rsi_overbought: float = 97,  # FIXED: More extreme (was 95)
         rsi_exit: float = 50,
-        min_confidence: float = 0.75,
+        min_confidence: float = 0.85,  # FIXED: Higher threshold (was 0.75)
         stop_loss_pct: float = 2.0,
         take_profit_pct: float = 3.0,
         max_trade_duration_minutes: int = 720,
-        adx_max: float = 25.0,
-        min_minutes_between_trades: int = 60,
-        max_daily_trades: int = 15
+        adx_max: float = 20.0,  # FIXED: Lower to avoid trends (was 25.0)
+        min_minutes_between_trades: int = 240,  # FIXED: 4 hours cooldown (was 60)
+        max_daily_trades: int = 5  # FIXED: Much lower (was 15)
     ):
         """
         Initialize Connors RSI strategy
@@ -146,7 +146,7 @@ class ConnorsRSIStrategy(BaseStrategy):
             if adx > self.adx_max:
                 return self._create_hold_signal(current_price, timestamp)
             
-            if volume < volume_avg * 0.8:
+            if volume < volume_avg * 1.2:  # FIXED: Require above-average volume (was 0.8)
                 return self._create_hold_signal(current_price, timestamp)
             
             signal_strength = 0.0

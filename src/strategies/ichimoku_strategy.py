@@ -32,10 +32,11 @@ class IchimokuStrategy(BaseStrategy):
         self,
         symbol: str,
         timeframe: str = '1h',
-        min_confidence: float = 0.75,
-        stop_loss_pct: float = 2.5,
-        take_profit_pct: float = 5.0,
-        max_trade_duration_minutes: int = 2880
+        min_confidence: float = 0.80,
+        stop_loss_pct: float = 2.0,
+        take_profit_pct: float = 4.5,
+        max_trade_duration_minutes: int = 2880,
+        min_minutes_between_trades: int = 180
     ):
         """
         Initialize Ichimoku strategy
@@ -52,6 +53,7 @@ class IchimokuStrategy(BaseStrategy):
             'stop_loss_pct': stop_loss_pct,
             'take_profit_pct': take_profit_pct,
             'max_trade_duration_minutes': max_trade_duration_minutes,
+            'min_minutes_between_trades': min_minutes_between_trades,
         }
         super().__init__(name=f'Ichimoku_{timeframe}', config=config)
         
@@ -62,10 +64,12 @@ class IchimokuStrategy(BaseStrategy):
         self.stop_loss_pct = stop_loss_pct
         self.take_profit_pct = take_profit_pct
         self.max_trade_duration_minutes = max_trade_duration_minutes
+        self.min_minutes_between_trades = min_minutes_between_trades
         
         self.total_trades = 0
         self.winning_trades = 0
         self.total_pnl = 0.0
+        self.last_trade_time = None
         logger.info(
             f"IchimokuStrategy initialized: {symbol} {timeframe}"
         )
@@ -126,6 +130,11 @@ class IchimokuStrategy(BaseStrategy):
             
             tk_cross_up = tenkan_above_kijun
             tk_cross_down = tenkan_below_kijun
+            
+            if self.last_trade_time is not None:
+                time_since_last_trade = (timestamp - self.last_trade_time).total_seconds() / 60
+                if time_since_last_trade < self.min_minutes_between_trades:
+                    return self._create_hold_signal(current_price, timestamp)
             
             signal_strength = 0.0
             action = SignalAction.HOLD
@@ -204,6 +213,7 @@ class IchimokuStrategy(BaseStrategy):
                     'tenkan_above_kijun': tenkan_above_kijun
                 }
             )
+            self.last_trade_time = timestamp or datetime.now()
             self.record_signal(signal)
             return signal
             
