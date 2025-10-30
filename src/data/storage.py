@@ -93,6 +93,46 @@ class SystemLogModel(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
+class FundingEventModel(Base):
+    """Model for storing funding rate events for perpetual contracts."""
+    __tablename__ = 'funding_events'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    symbol = Column(String(20), nullable=False, index=True)
+    timestamp = Column(DateTime, nullable=False, index=True)
+    funding_rate = Column(Float, nullable=False)  # Funding rate (e.g., 0.0001 = 0.01%)
+    position_size = Column(Float, nullable=False)  # Position size in base currency
+    notional_value = Column(Float, nullable=False)  # Position notional value in quote currency
+    funding_amount = Column(Float, nullable=False)  # Funding payment (positive = received, negative = paid)
+    side = Column(String(10), nullable=False)  # LONG or SHORT
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class AIDecisionModel(Base):
+    """Model for storing AI trading decisions and their outcomes."""
+    __tablename__ = 'ai_decisions'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    timestamp = Column(DateTime, nullable=False, index=True)
+    symbol = Column(String(20), nullable=False, index=True)
+    decision = Column(String(10), nullable=False)  # BUY, SELL, HOLD, CLOSE
+    confidence = Column(Float, nullable=False)  # 0.0 to 1.0
+    reasoning = Column(Text, nullable=False)  # AI's reasoning/justification
+    market_context = Column(Text, nullable=True)  # JSON: price, indicators, market conditions
+    position_size = Column(Float, nullable=True)  # Recommended position size
+    entry_price = Column(Float, nullable=True)  # Entry price (if executed)
+    stop_loss = Column(Float, nullable=True)  # Stop-loss price
+    take_profit = Column(Float, nullable=True)  # Take-profit price
+    invalidation_condition = Column(Text, nullable=True)  # Condition that invalidates the trade
+    executed = Column(Boolean, default=False)  # Whether decision was executed
+    trade_id = Column(Integer, nullable=True)  # Link to TradeModel if executed
+    outcome = Column(String(20), nullable=True)  # win, loss, breakeven (after trade closes)
+    pnl = Column(Float, nullable=True)  # P&L if trade was executed and closed
+    model_used = Column(String(50), nullable=True)  # AI model used (e.g., "deepseek-chat")
+    strategy = Column(String(50), nullable=True, index=True)  # Strategy that generated decision
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class SQLiteStorage:
     """SQLite database interface for persistent storage."""
     
@@ -349,6 +389,190 @@ class SQLiteStorage:
             session.rollback()
             logger.error(f"Error saving performance metric: {e}")
             raise
+        finally:
+            session.close()
+    
+    def save_ai_decision(self, decision_data: Dict[str, Any]) -> int:
+        """
+        Save an AI trading decision to database.
+        
+        Args:
+            decision_data: Dictionary containing decision information
+            
+        Returns:
+            Decision ID
+        """
+        session = self.SessionLocal()
+        try:
+            decision = AIDecisionModel(**decision_data)
+            session.add(decision)
+            session.commit()
+            session.refresh(decision)
+            
+            logger.bind(ai=True).info(
+                f"Saved AI decision: {decision.decision} {decision.symbol} "
+                f"confidence={decision.confidence:.2f}"
+            )
+            
+            return decision.id
+        except Exception as e:
+            session.rollback()
+            logger.error(f"Error saving AI decision: {e}")
+            raise
+        finally:
+            session.close()
+    
+    def update_ai_decision(self, decision_id: int, updates: Dict[str, Any]):
+        """
+        Update an existing AI decision.
+        
+        Args:
+            decision_id: Decision ID
+            updates: Dictionary of fields to update
+        """
+        session = self.SessionLocal()
+        try:
+            decision = session.query(AIDecisionModel).filter_by(id=decision_id).first()
+            if decision:
+                for key, value in updates.items():
+                    setattr(decision, key, value)
+                session.commit()
+                logger.bind(ai=True).info(f"Updated AI decision {decision_id}")
+            else:
+                logger.warning(f"AI decision {decision_id} not found")
+        except Exception as e:
+            session.rollback()
+            logger.error(f"Error updating AI decision: {e}")
+            raise
+        finally:
+            session.close()
+    
+    def get_ai_decisions(
+        self,
+        symbol: Optional[str] = None,
+        strategy: Optional[str] = None,
+        decision: Optional[str] = None,
+        executed: Optional[bool] = None,
+        start_time: Optional[datetime] = None,
+        end_time: Optional[datetime] = None,
+        limit: int = 100
+    ) -> List[Dict[str, Any]]:
+        """
+        Retrieve AI decisions from database.
+        
+        Args:
+            symbol: Filter by symbol (optional)
+            strategy: Filter by strategy (optional)
+            decision: Filter by decision type (optional)
+            executed: Filter by execution status (optional)
+            start_time: Start time filter (optional)
+            end_time: End time filter (optional)
+            limit: Maximum number of records
+            
+        Returns:
+            List of AI decision dictionaries
+        """
+        session = self.SessionLocal()
+        try:
+            query = session.query(AIDecisionModel)
+            
+            if symbol:
+                query = query.filter_by(symbol=symbol)
+            if strategy:
+                query = query.filter_by(strategy=strategy)
+            if decision:
+                query = query.filter_by(decision=decision)
+            if executed is not None:
+                query = query.filter_by(executed=executed)
+            if start_time:
+                query = query.filter(AIDecisionModel.timestamp >= start_time)
+            if end_time:
+                query = query.filter(AIDecisionModel.timestamp <= end_time)
+            
+            query = query.order_by(AIDecisionModel.timestamp.desc()).limit(limit)
+            
+            decisions = query.all()
+            
+            return [{
+                'id': d.id,
+                'timestamp': d.timestamp,
+                'symbol': d.symbol,
+                'decision': d.decision,
+                'confidence': d.confidence,
+                'reasoning': d.reasoning,
+                'market_context': d.market_context,
+                'position_size': d.position_size,
+                'entry_price': d.entry_price,
+                'stop_loss': d.stop_loss,
+                'take_profit': d.take_profit,
+                'invalidation_condition': d.invalidation_condition,
+                'executed': d.executed,
+                'trade_id': d.trade_id,
+                'outcome': d.outcome,
+                'pnl': d.pnl,
+                'model_used': d.model_used,
+                'strategy': d.strategy
+            } for d in decisions]
+        finally:
+            session.close()
+    
+    def get_ai_decision_stats(
+        self,
+        strategy: Optional[str] = None,
+        start_time: Optional[datetime] = None,
+        end_time: Optional[datetime] = None
+    ) -> Dict[str, Any]:
+        """
+        Get statistics for AI decisions.
+        
+        Args:
+            strategy: Filter by strategy (optional)
+            start_time: Start time filter (optional)
+            end_time: End time filter (optional)
+            
+        Returns:
+            Dictionary with decision statistics
+        """
+        session = self.SessionLocal()
+        try:
+            query = session.query(AIDecisionModel)
+            
+            if strategy:
+                query = query.filter_by(strategy=strategy)
+            if start_time:
+                query = query.filter(AIDecisionModel.timestamp >= start_time)
+            if end_time:
+                query = query.filter(AIDecisionModel.timestamp <= end_time)
+            
+            decisions = query.all()
+            
+            if not decisions:
+                return {
+                    'total_decisions': 0,
+                    'executed_count': 0,
+                    'execution_rate': 0.0,
+                    'avg_confidence': 0.0,
+                    'win_count': 0,
+                    'loss_count': 0,
+                    'win_rate': 0.0,
+                    'total_pnl': 0.0
+                }
+            
+            executed = [d for d in decisions if d.executed]
+            closed = [d for d in executed if d.outcome is not None]
+            wins = [d for d in closed if d.outcome == 'win']
+            losses = [d for d in closed if d.outcome == 'loss']
+            
+            return {
+                'total_decisions': len(decisions),
+                'executed_count': len(executed),
+                'execution_rate': len(executed) / len(decisions) if decisions else 0.0,
+                'avg_confidence': sum(d.confidence for d in decisions) / len(decisions),
+                'win_count': len(wins),
+                'loss_count': len(losses),
+                'win_rate': len(wins) / len(closed) if closed else 0.0,
+                'total_pnl': sum(d.pnl for d in closed if d.pnl is not None)
+            }
         finally:
             session.close()
     

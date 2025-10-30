@@ -13,7 +13,7 @@ This is critical for zero human interaction to prevent catastrophic losses.
 """
 
 import logging
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass, field
 
@@ -56,6 +56,7 @@ class EnhancedRiskManager:
         max_symbol_exposure_pct: float = 20.0,  # Max 20% exposure per symbol
         confidence_scaling: bool = True,  # Scale position size by confidence
         min_confidence_for_full_size: float = 0.9,  # Confidence needed for max size
+        min_trade_interval_sec: int = 1800,  # Min 30 minutes between trades per symbol
     ):
         """
         Initialize enhanced risk manager
@@ -69,6 +70,7 @@ class EnhancedRiskManager:
             max_symbol_exposure_pct: Maximum exposure per symbol as % of capital
             confidence_scaling: Whether to scale position size by confidence
             min_confidence_for_full_size: Confidence needed for maximum position size
+            min_trade_interval_sec: Minimum seconds between trades per symbol (cooldown)
         """
         self.initial_capital = initial_capital
         self.current_capital = initial_capital
@@ -79,12 +81,14 @@ class EnhancedRiskManager:
         self.max_symbol_exposure_pct = max_symbol_exposure_pct
         self.confidence_scaling = confidence_scaling
         self.min_confidence_for_full_size = min_confidence_for_full_size
+        self.min_trade_interval_sec = min_trade_interval_sec
         
         self.daily_state: Dict[date, DailyRiskState] = {}
         self.current_date = date.today()
         self._init_daily_state()
         
         self.symbol_exposure: Dict[str, float] = {}
+        self.last_trade_time: Dict[str, datetime] = {}
         
         self.total_trades = 0
         self.total_pnl = 0.0
@@ -96,7 +100,8 @@ class EnhancedRiskManager:
             f"capital=${initial_capital:.2f}, "
             f"max daily loss={max_daily_loss_pct}%, "
             f"max daily trades={max_daily_trades}, "
-            f"position size={min_position_size_pct}-{max_position_size_pct}%"
+            f"position size={min_position_size_pct}-{max_position_size_pct}%, "
+            f"trade cooldown={min_trade_interval_sec}s"
         )
     
     def _init_daily_state(self) -> None:
@@ -140,6 +145,31 @@ class EnhancedRiskManager:
         
         return True
     
+    def can_trade_symbol(self, symbol: str) -> bool:
+        """
+        Check if we can trade this symbol (cooldown check)
+        
+        Args:
+            symbol: Trading pair symbol
+            
+        Returns:
+            True if enough time has passed since last trade, False otherwise
+        """
+        if symbol not in self.last_trade_time:
+            return True
+        
+        elapsed = (datetime.now() - self.last_trade_time[symbol]).total_seconds()
+        
+        if elapsed < self.min_trade_interval_sec:
+            remaining = self.min_trade_interval_sec - elapsed
+            logger.debug(
+                f"⏰ Symbol cooldown active for {symbol}: "
+                f"{remaining:.0f}s remaining (min interval: {self.min_trade_interval_sec}s)"
+            )
+            return False
+        
+        return True
+    
     def can_open_position(self, symbol: str) -> bool:
         """
         Check if we can open a position in this symbol
@@ -151,6 +181,12 @@ class EnhancedRiskManager:
             True if can open position, False otherwise
         """
         if not self.can_trade_today():
+            return False
+        
+        if not self.can_trade_symbol(symbol):
+            logger.warning(
+                f"⏰ Cannot trade {symbol}: cooldown period active"
+            )
             return False
         
         current_exposure = self.symbol_exposure.get(symbol, 0.0)
@@ -237,6 +273,7 @@ class EnhancedRiskManager:
         state = self.daily_state[self.current_date]
         
         self.symbol_exposure[symbol] = self.symbol_exposure.get(symbol, 0.0) + position_value
+        self.last_trade_time[symbol] = datetime.now()
         
         state.open_positions += 1
         if symbol not in state.symbols_traded:
@@ -245,7 +282,8 @@ class EnhancedRiskManager:
         logger.info(
             f"📈 Position opened: {symbol}, "
             f"value=${position_value:.2f}, "
-            f"exposure=${self.symbol_exposure[symbol]:.2f}"
+            f"exposure=${self.symbol_exposure[symbol]:.2f}, "
+            f"cooldown={self.min_trade_interval_sec}s"
         )
     
     def record_position_closed(
