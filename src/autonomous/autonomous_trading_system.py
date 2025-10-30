@@ -52,7 +52,7 @@ class AutonomousTradingSystem:
         strategies: List[BaseStrategy],
         price_feed: PriceFeed,
         initial_capital: float = 10000.0,
-        loop_interval_seconds: int = 180,
+        loop_interval_seconds: int = 300,
         max_open_positions: int = 5,
         min_confidence_threshold: float = 0.7,
         enable_trading: bool = False,
@@ -437,7 +437,7 @@ async def main():
     system = AutonomousTradingSystem(
         strategies=strategies,
         initial_capital=10000.0,
-        loop_interval_seconds=180,
+        loop_interval_seconds=300,
         max_open_positions=5,
         min_confidence_threshold=0.7,
         enable_trading=False,
