@@ -391,7 +391,7 @@ class PaperTradingEngine:
         }
         
         with open(report_file, 'w') as f:
-            json.dumps(report, indent=2, f)
+            json.dump(report, f, indent=2)
         
         logger.info(f"Session report saved to {report_file}")
         
