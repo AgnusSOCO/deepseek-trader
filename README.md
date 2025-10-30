@@ -86,21 +86,50 @@ A sophisticated autonomous AI-powered cryptocurrency trading bot that leverages 
 
 ## 🔧 Installation
 
-### Prerequisites
+### 🚀 Quick Install (Ubuntu 22.04 - Recommended)
+
+**One-command installation script that sets up everything automatically:**
+
+```bash
+git clone https://github.com/AgnusSOCO/deepseek-trader.git
+cd deepseek-trader
+sudo ./install_ubuntu.sh
+```
+
+The installation script will:
+- ✅ Install Python 3.11, Redis, and all system dependencies
+- ✅ Build TA-Lib from source
+- ✅ Create virtual environment and install Python packages
+- ✅ Set up configuration files from templates
+- ✅ Initialize database
+- ✅ Run comprehensive verification tests
+- ✅ Optionally configure systemd service
+
+**Installation time**: 15-20 minutes
+
+After installation completes, edit `.env` with your API keys and start trading!
+
+---
+
+### Manual Installation (All Platforms)
+
+If you're not on Ubuntu 22.04 or prefer manual installation:
+
+#### Prerequisites
 
 - **Python 3.11+** (3.12 recommended)
 - **Redis** (for caching)
 - **Git**
 - **TA-Lib** (technical analysis library)
 
-### System Requirements
+#### System Requirements
 
 - **CPU**: 4+ cores recommended
 - **RAM**: 8 GB minimum (16 GB recommended)
 - **Storage**: 50 GB SSD
 - **Network**: Stable internet connection
 
-### Step 1: Clone the Repository
+#### Step 1: Clone the Repository
 
 ```bash
 git clone https://github.com/AgnusSOCO/deepseek-trader.git
