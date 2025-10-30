@@ -88,7 +88,7 @@ A sophisticated autonomous AI-powered cryptocurrency trading bot that leverages 
 
 ### 🚀 Quick Install (Ubuntu 22.04 - Recommended)
 
-**One-command installation script that sets up everything automatically:**
+**One-command installation script with interactive configuration:**
 
 ```bash
 git clone https://github.com/AgnusSOCO/deepseek-trader.git
@@ -100,14 +100,22 @@ The installation script will:
 - ✅ Install Python 3.11, Redis, and all system dependencies
 - ✅ Build TA-Lib from source
 - ✅ Create virtual environment and install Python packages
-- ✅ Set up configuration files from templates
+- ✅ **Interactively configure your .env file** (trading mode, exchange, API keys, risk settings)
 - ✅ Initialize database
 - ✅ Run comprehensive verification tests
 - ✅ Optionally configure systemd service
 
 **Installation time**: 15-20 minutes
 
-After installation completes, edit `.env` with your API keys and start trading!
+**No manual configuration needed!** The script prompts for all necessary settings during installation, including:
+- Trading mode (demo/live)
+- Exchange selection (MEXC/Binance/Bybit)
+- API keys for your chosen exchange
+- OpenRouter API key for AI trading
+- Risk management parameters
+- Trading symbols and capital
+
+After installation completes, your bot is ready to start trading immediately!
 
 ---
 
