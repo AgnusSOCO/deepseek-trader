@@ -666,3 +666,177 @@ class PriceFeed:
                 for symbol, snapshot in self.price_snapshots.items()
             }
         }
+    
+    def get_multi_timeframe_data(
+        self,
+        symbol: str,
+        timeframes: Optional[List[str]] = None,
+        lookback_bars: int = 200
+    ) -> Dict[str, pd.DataFrame]:
+        """
+        Get OHLCV data across multiple timeframes for nof1-style prompts
+        
+        Args:
+            symbol: Trading pair symbol
+            timeframes: List of timeframes (defaults to all available)
+            lookback_bars: Number of bars to return per timeframe
+            
+        Returns:
+            Dict mapping timeframe to DataFrame with OHLCV and indicators
+        """
+        if timeframes is None:
+            timeframes = self.timeframes
+        
+        result = {}
+        for tf in timeframes:
+            actual_tf = tf
+            if tf == '3m' and self.exchange_id == 'mexc':
+                actual_tf = '5m'
+                logger.debug(f"Using 5m data as fallback for 3m on MEXC")
+            
+            key = (symbol, actual_tf)
+            window = self.ohlcv_windows.get(key)
+            
+            if window and window.df is not None:
+                df = window.df.tail(lookback_bars).copy()
+                result[tf] = df
+            else:
+                logger.warning(f"No data for {symbol} {tf}")
+        
+        return result
+    
+    def get_time_series_arrays(
+        self,
+        symbol: str,
+        timeframes: Optional[List[str]] = None,
+        lookback_bars: int = 50
+    ) -> Dict[str, Dict[str, List[float]]]:
+        """
+        Get compact time-series arrays for LLM prompts (nof1-style)
+        
+        Returns data in format:
+        {
+            '1m': {
+                'close': [100.1, 100.2, ...],
+                'ema_12': [99.8, 99.9, ...],
+                'rsi': [45.2, 46.1, ...],
+                ...
+            },
+            '5m': {...},
+            ...
+        }
+        
+        Args:
+            symbol: Trading pair symbol
+            timeframes: List of timeframes
+            lookback_bars: Number of recent bars to include
+            
+        Returns:
+            Dict mapping timeframe to dict of indicator arrays
+        """
+        multi_tf_data = self.get_multi_timeframe_data(symbol, timeframes, lookback_bars)
+        
+        result = {}
+        for tf, df in multi_tf_data.items():
+            if df is None or len(df) == 0:
+                continue
+            
+            tf_data = {}
+            
+            for col in ['open', 'high', 'low', 'close', 'volume']:
+                if col in df.columns:
+                    tf_data[col] = df[col].fillna(0).tolist()
+            
+            indicator_cols = [
+                'ema_12', 'ema_26', 'ema_20', 'ema_50',
+                'macd', 'macd_signal', 'macd_hist',
+                'rsi', 'rsi_7', 'rsi_14',
+                'atr', 'adx',
+                'bb_upper', 'bb_middle', 'bb_lower',
+                'volume_avg', 'obv'
+            ]
+            
+            for col in indicator_cols:
+                if col in df.columns:
+                    tf_data[col] = df[col].fillna(0).tolist()
+            
+            result[tf] = tf_data
+        
+        return result
+    
+    async def get_funding_rate(self, symbol: str) -> Optional[Dict[str, Any]]:
+        """
+        Get current funding rate for perpetual futures
+        
+        Args:
+            symbol: Trading pair symbol
+            
+        Returns:
+            Dict with funding rate info or None if not supported
+        """
+        try:
+            await self._rate_limit()
+            
+            if not hasattr(self.exchange, 'fetch_funding_rate'):
+                logger.debug(f"{self.exchange_id} does not support funding rates")
+                return None
+            
+            funding = await self.exchange.fetch_funding_rate(symbol)
+            
+            return {
+                'symbol': symbol,
+                'funding_rate': float(funding.get('fundingRate', 0)),
+                'funding_timestamp': funding.get('fundingTimestamp'),
+                'next_funding_time': funding.get('nextFundingTime'),
+                'info': funding.get('info', {})
+            }
+        
+        except Exception as e:
+            logger.debug(f"Error fetching funding rate for {symbol}: {e}")
+            return None
+    
+    async def get_order_book(
+        self,
+        symbol: str,
+        limit: int = 20
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Get order book snapshot for market depth analysis
+        
+        Args:
+            symbol: Trading pair symbol
+            limit: Number of levels to fetch (default 20)
+            
+        Returns:
+            Dict with bids, asks, and depth metrics
+        """
+        try:
+            await self._rate_limit()
+            
+            order_book = await self.exchange.fetch_order_book(symbol, limit=limit)
+            
+            bids = order_book.get('bids', [])
+            asks = order_book.get('asks', [])
+            
+            bid_volume = sum(bid[1] for bid in bids) if bids else 0
+            ask_volume = sum(ask[1] for ask in asks) if asks else 0
+            
+            imbalance = 0
+            if bid_volume + ask_volume > 0:
+                imbalance = (bid_volume - ask_volume) / (bid_volume + ask_volume)
+            
+            return {
+                'symbol': symbol,
+                'timestamp': order_book.get('timestamp'),
+                'bids': bids[:5],  # Top 5 levels
+                'asks': asks[:5],  # Top 5 levels
+                'bid_volume': bid_volume,
+                'ask_volume': ask_volume,
+                'imbalance': imbalance,  # -1 (all asks) to +1 (all bids)
+                'spread': asks[0][0] - bids[0][0] if bids and asks else 0,
+                'spread_percent': ((asks[0][0] - bids[0][0]) / bids[0][0] * 100) if bids and asks else 0
+            }
+        
+        except Exception as e:
+            logger.error(f"Error fetching order book for {symbol}: {e}")
+            return None
